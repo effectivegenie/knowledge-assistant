@@ -15,6 +15,10 @@ export class KnowledgeAssistantStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
+    const modelId =
+      this.node.tryGetContext('inferenceProfileArn') ??
+      'anthropic.claude-3-5-sonnet-20241022-v2:0';
+
     // ==================== Storage ====================
 
     const docsBucket = new s3.Bucket(this, 'DocumentsBucket', {
@@ -113,7 +117,7 @@ export class KnowledgeAssistantStack extends cdk.Stack {
       environment: {
         CONNECTIONS_TABLE: connectionsTable.tableName,
         KNOWLEDGE_BASE_ID: knowledgeBase.knowledgeBaseId,
-        MODEL_ID: 'anthropic.claude-sonnet-4-6',
+        MODEL_ID: modelId,
         CHAT_TABLE: chatHistoryTable.tableName,
       },
     });
