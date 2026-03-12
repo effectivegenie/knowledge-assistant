@@ -1,9 +1,10 @@
-import React, {
+import {
   createContext,
   useContext,
   useState,
   useEffect,
   useCallback,
+  ReactNode,
 } from 'react';
 import {
   signIn as cognitoSignIn,
@@ -36,7 +37,7 @@ function parseIdToken(token: string): { email: string; sub: string } {
   return { email: payload.email, sub: payload.sub };
 }
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [idToken, setIdToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);

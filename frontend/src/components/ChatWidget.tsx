@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import { useRef, useEffect, useState, useCallback, KeyboardEvent } from 'react';
 import { Avatar, Button, Input, Typography } from 'antd';
 import {
   SendOutlined,
@@ -36,7 +36,7 @@ export default function ChatWidget() {
   }, [input, canSend, sendMessage]);
 
   const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    (e: KeyboardEvent<HTMLTextAreaElement>) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         handleSend();
