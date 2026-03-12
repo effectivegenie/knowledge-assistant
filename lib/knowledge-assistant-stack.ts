@@ -113,9 +113,7 @@ export class KnowledgeAssistantStack extends cdk.Stack {
       environment: {
         CONNECTIONS_TABLE: connectionsTable.tableName,
         KNOWLEDGE_BASE_ID: knowledgeBase.knowledgeBaseId,
-        // Use the regional inference profile ID for Claude Sonnet 4.6.
-        // Change the prefix to eu./apac. if you are in those regions.
-        MODEL_ID: 'us.anthropic.claude-sonnet-4-6:0',
+        MODEL_ID: 'anthropic.claude-sonnet-4-6',
         CHAT_TABLE: chatHistoryTable.tableName,
       },
     });
