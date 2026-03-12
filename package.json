@@ -1,0 +1,31 @@
+{
+  "name": "knowledge-assistant",
+  "version": "1.0.0",
+  "bin": {
+    "knowledge-assistant": "bin/app.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "cdk": "cdk",
+    "synth": "cdk synth",
+    "deploy": "cdk deploy --require-approval never --outputs-file cdk-outputs.json",
+    "deploy:all": "bash scripts/deploy.sh",
+    "deploy:frontend": "bash scripts/deploy-frontend.sh",
+    "destroy": "cdk destroy",
+    "frontend:install": "cd frontend && npm install",
+    "frontend:dev": "cd frontend && npm run dev",
+    "frontend:build": "cd frontend && npm run build"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.160.0",
+    "constructs": "^10.0.0",
+    "@cdklabs/generative-ai-cdk-constructs": "^0.1.315"
+  },
+  "devDependencies": {
+    "typescript": "~5.6.0",
+    "aws-cdk": "^2.160.0",
+    "@types/node": "^22.0.0",
+    "ts-node": "^10.9.0"
+  }
+}

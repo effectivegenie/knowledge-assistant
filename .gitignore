@@ -1,0 +1,33 @@
+# CDK TypeScript compiled output
+bin/*.js
+bin/*.d.ts
+lib/*.js
+lib/*.d.ts
+*.js.map
+
+# CDK output
+cdk.out/
+cdk-outputs.json
+
+# Dependencies
+node_modules/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Build
+dist/
+
+# Frontend
+frontend/dist/
+frontend/node_modules/
+
+# Environment files
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
