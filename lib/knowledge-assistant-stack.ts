@@ -113,7 +113,7 @@ export class KnowledgeAssistantStack extends cdk.Stack {
       environment: {
         CONNECTIONS_TABLE: connectionsTable.tableName,
         KNOWLEDGE_BASE_ID: knowledgeBase.knowledgeBaseId,
-        MODEL_ID: 'anthropic.claude-3-sonnet-20240229-v1:0',
+        MODEL_ID: 'anthropic.claude-sonnet-4-6',
         CHAT_TABLE: chatHistoryTable.tableName,
       },
     });
