@@ -147,8 +147,10 @@ export class KnowledgeAssistantStack extends cdk.Stack {
     chatFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModelWithResponseStream', 'bedrock:InvokeModel'],
       resources: [
+        // Allow foundation models in the stack Region (for other models if needed)
         `arn:aws:bedrock:${this.region}::foundation-model/*`,
-        'arn:aws:bedrock:::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
+        // Explicitly allow Claude Haiku 4.5 in all regions used by the EU inference profile
+        'arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
       ],
     }));
 
