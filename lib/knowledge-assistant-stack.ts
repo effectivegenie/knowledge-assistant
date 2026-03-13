@@ -146,7 +146,10 @@ export class KnowledgeAssistantStack extends cdk.Stack {
     }));
     chatFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModelWithResponseStream', 'bedrock:InvokeModel'],
-      resources: [`arn:aws:bedrock:${this.region}::foundation-model/*`],
+      resources: [
+        `arn:aws:bedrock:${this.region}::foundation-model/*`,
+        'arn:aws:bedrock:::foundation-model/anthropic.claude-sonnet-4-6',
+      ],
     }));
 
     // ==================== WebSocket API ====================
