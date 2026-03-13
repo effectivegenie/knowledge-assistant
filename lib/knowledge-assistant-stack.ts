@@ -114,9 +114,9 @@ export class KnowledgeAssistantStack extends cdk.Stack {
         CONNECTIONS_TABLE: connectionsTable.tableName,
         KNOWLEDGE_BASE_ID: knowledgeBase.knowledgeBaseId,
         MODEL_PROVIDER: 'bedrock',
-        // Use the GLOBAL cross-region inference profile ID for Claude Sonnet 4.6.
+        // Use the EU cross-region inference profile ID for Claude Haiku 4.5.
         // This is the ID Bedrock expects as modelId when invoking the profile.
-        MODEL_ID: 'global.anthropic.claude-sonnet-4-6',
+        MODEL_ID: 'eu.anthropic.claude-haiku-4-5-20251001-v1:0',
         CHAT_TABLE: chatHistoryTable.tableName,
       },
     });
@@ -125,7 +125,7 @@ export class KnowledgeAssistantStack extends cdk.Stack {
     chatFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModelWithResponseStream', 'bedrock:InvokeModel'],
       resources: [
-        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-6`,
+        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/eu.anthropic.claude-haiku-4-5-20251001-v1:0`,
       ],
     }));
 
@@ -148,7 +148,7 @@ export class KnowledgeAssistantStack extends cdk.Stack {
       actions: ['bedrock:InvokeModelWithResponseStream', 'bedrock:InvokeModel'],
       resources: [
         `arn:aws:bedrock:${this.region}::foundation-model/*`,
-        'arn:aws:bedrock:::foundation-model/anthropic.claude-sonnet-4-6',
+        'arn:aws:bedrock:::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
       ],
     }));
 
