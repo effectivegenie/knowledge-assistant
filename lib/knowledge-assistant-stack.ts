@@ -113,8 +113,8 @@ export class KnowledgeAssistantStack extends cdk.Stack {
       environment: {
         CONNECTIONS_TABLE: connectionsTable.tableName,
         KNOWLEDGE_BASE_ID: knowledgeBase.knowledgeBaseId,
-        MODEL_PROVIDER: 'openai',
-        OPENAI_MODEL: 'gpt-4.1-mini',
+        MODEL_PROVIDER: 'bedrock',
+        MODEL_ID: 'amazon.nova-micro-v1:0',
         CHAT_TABLE: chatHistoryTable.tableName,
       },
     });
