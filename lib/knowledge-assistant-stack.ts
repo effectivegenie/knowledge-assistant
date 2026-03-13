@@ -125,7 +125,7 @@ export class KnowledgeAssistantStack extends cdk.Stack {
     chatFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModelWithResponseStream', 'bedrock:InvokeModel'],
       resources: [
-        `arn:aws:bedrock:${this.region}::inference-profile/global.anthropic.claude-sonnet-4-6`,
+        `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/global.anthropic.claude-sonnet-4-6`,
       ],
     }));
 
