@@ -114,9 +114,9 @@ export class KnowledgeAssistantStack extends cdk.Stack {
         CONNECTIONS_TABLE: connectionsTable.tableName,
         KNOWLEDGE_BASE_ID: knowledgeBase.knowledgeBaseId,
         MODEL_PROVIDER: 'bedrock',
-        // Use the system-defined inference profile ID for Claude 4 Sonnet in EU.
-        // This routes through Bedrock's managed inference profile instead of raw on-demand model id.
-        MODEL_ID: 'eu.anthropic.claude-4-sonnet-20250514-v1:0',
+        // Use the GLOBAL cross-region inference profile ID for Claude Sonnet 4.6.
+        // This is the ID Bedrock expects as modelId when invoking the profile.
+        MODEL_ID: 'global.anthropic.claude-sonnet-4-6',
         CHAT_TABLE: chatHistoryTable.tableName,
       },
     });
@@ -125,7 +125,7 @@ export class KnowledgeAssistantStack extends cdk.Stack {
     chatFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModelWithResponseStream', 'bedrock:InvokeModel'],
       resources: [
-        `arn:aws:bedrock:${this.region}::inference-profile/eu.anthropic.claude-4-sonnet-20250514-v1:0`,
+        `arn:aws:bedrock:${this.region}::inference-profile/global.anthropic.claude-sonnet-4-6`,
       ],
     }));
 
