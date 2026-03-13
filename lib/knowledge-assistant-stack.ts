@@ -64,6 +64,13 @@ export class KnowledgeAssistantStack extends cdk.Stack {
       dataSourceName: 'documents',
     });
 
+    // ==================== Chat Model (Bedrock, via inference profile) ====================
+
+    const chatModel = bedrock.CrossRegionInferenceProfile.fromConfig({
+      geoRegion: bedrock.CrossRegionInferenceProfileRegion.EU,
+      model: bedrock.BedrockFoundationModel.AMAZON_NOVA_MICRO_V1,
+    });
+
     // ==================== DynamoDB ====================
 
     const connectionsTable = new dynamodb.Table(this, 'ConnectionsTable', {
@@ -114,7 +121,7 @@ export class KnowledgeAssistantStack extends cdk.Stack {
         CONNECTIONS_TABLE: connectionsTable.tableName,
         KNOWLEDGE_BASE_ID: knowledgeBase.knowledgeBaseId,
         MODEL_PROVIDER: 'bedrock',
-        MODEL_ID: 'amazon.nova-micro-v1:0',
+        MODEL_ID: chatModel.invokableArn,
         CHAT_TABLE: chatHistoryTable.tableName,
       },
     });
