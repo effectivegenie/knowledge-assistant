@@ -127,6 +127,7 @@ export class KnowledgeAssistantStack extends cdk.Stack {
     });
     connectionsTable.grantReadWriteData(chatFn);
     chatHistoryTable.grantReadWriteData(chatFn);
+    chatModel.grantInvoke(chatFn);
 
     const historyFn = new lambda.Function(this, 'HistoryFunction', {
       runtime: lambda.Runtime.NODEJS_20_X,
