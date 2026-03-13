@@ -19,7 +19,6 @@
   "context": {
     "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
     "@aws-cdk/core:checkSecretUsage": true,
-    "@aws-cdk/core:target-partitions": ["aws"],
-    "inferenceProfileArn": "REPLACE_WITH_INFERENCE_PROFILE_ARN"
+    "@aws-cdk/core:target-partitions": ["aws"]
   }
 }
