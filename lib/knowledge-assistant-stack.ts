@@ -64,11 +64,11 @@ export class KnowledgeAssistantStack extends cdk.Stack {
       dataSourceName: 'documents',
     });
 
-    // ==================== Chat Model (Bedrock, via inference profile) ====================
+    // ==================== Chat Model (Bedrock, via Anthropic cross-region inference profile) ====================
 
     const chatModel = bedrock.CrossRegionInferenceProfile.fromConfig({
-      geoRegion: bedrock.CrossRegionInferenceProfileRegion.EU,
-      model: bedrock.BedrockFoundationModel.AMAZON_NOVA_MICRO_V1,
+      geoRegion: bedrock.CrossRegionInferenceProfileRegion.US,
+      model: bedrock.BedrockFoundationModel.ANTHROPIC_CLAUDE_3_5_SONNET_V2_0,
     });
 
     // ==================== DynamoDB ====================
