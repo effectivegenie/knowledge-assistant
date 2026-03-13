@@ -113,8 +113,8 @@ export class KnowledgeAssistantStack extends cdk.Stack {
       environment: {
         CONNECTIONS_TABLE: connectionsTable.tableName,
         KNOWLEDGE_BASE_ID: knowledgeBase.knowledgeBaseId,
-        // Claude 3.5 Haiku v1 - non-legacy, on-demand Bedrock model
-        MODEL_ID: 'anthropic.claude-3-5-haiku-20241022-v1:0',
+        MODEL_PROVIDER: 'openai',
+        OPENAI_MODEL: 'gpt-4.1-mini',
         CHAT_TABLE: chatHistoryTable.tableName,
       },
     });

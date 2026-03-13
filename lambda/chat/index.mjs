@@ -8,6 +8,8 @@ const bedrockClient = new BedrockRuntimeClient({});
 const dynamo = new DynamoDBClient({});
 
 const CHAT_TABLE = process.env.CHAT_TABLE;
+const MODEL_PROVIDER = process.env.MODEL_PROVIDER || 'bedrock';
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
 const HISTORY_LIMIT = 20;
 
 const postToConnection = async (apiGw, connectionId, data) => {
@@ -85,27 +87,66 @@ export const handler = async (event) => {
       { role: 'user', content: prompt },
     ];
 
-    const requestBody = JSON.stringify({
-      anthropic_version: 'bedrock-2023-05-31',
-      max_tokens: 4096,
-      system: systemMessage,
-      messages,
-    });
-
-    const response = await bedrockClient.send(new InvokeModelWithResponseStreamCommand({
-      modelId: process.env.MODEL_ID,
-      contentType: 'application/json',
-      accept: 'application/json',
-      body: requestBody,
-    }));
-
     let assistantMessage = '';
-    for await (const ev of response.body) {
-      if (ev.chunk?.bytes) {
-        const parsed = JSON.parse(new TextDecoder().decode(ev.chunk.bytes));
-        if (parsed.type === 'content_block_delta' && parsed.delta?.type === 'text_delta') {
-          assistantMessage += parsed.delta.text;
-          await postToConnection(apiGw, connectionId, { type: 'chunk', content: parsed.delta.text });
+
+    if (MODEL_PROVIDER === 'openai') {
+      const apiKey = process.env.OPENAI_API_KEY;
+      if (!apiKey) {
+        throw new Error('OPENAI_API_KEY is not set');
+      }
+
+      const openAiMessages = [
+        { role: 'system', content: systemMessage },
+        ...messages,
+      ];
+
+      const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: OPENAI_MODEL,
+          messages: openAiMessages,
+          max_tokens: 4096,
+          stream: false,
+        }),
+      });
+
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(`OpenAI error: ${resp.status} ${text}`);
+      }
+
+      const data = await resp.json();
+      assistantMessage = data.choices?.[0]?.message?.content || '';
+
+      if (assistantMessage) {
+        await postToConnection(apiGw, connectionId, { type: 'chunk', content: assistantMessage });
+      }
+    } else {
+      const requestBody = JSON.stringify({
+        anthropic_version: 'bedrock-2023-05-31',
+        max_tokens: 4096,
+        system: systemMessage,
+        messages,
+      });
+
+      const response = await bedrockClient.send(new InvokeModelWithResponseStreamCommand({
+        modelId: process.env.MODEL_ID,
+        contentType: 'application/json',
+        accept: 'application/json',
+        body: requestBody,
+      }));
+
+      for await (const ev of response.body) {
+        if (ev.chunk?.bytes) {
+          const parsed = JSON.parse(new TextDecoder().decode(ev.chunk.bytes));
+          if (parsed.type === 'content_block_delta' && parsed.delta?.type === 'text_delta') {
+            assistantMessage += parsed.delta.text;
+            await postToConnection(apiGw, connectionId, { type: 'chunk', content: parsed.delta.text });
+          }
         }
       }
     }
