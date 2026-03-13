@@ -64,13 +64,6 @@ export class KnowledgeAssistantStack extends cdk.Stack {
       dataSourceName: 'documents',
     });
 
-    // ==================== Chat Model (Bedrock, via Anthropic Claude 4 Sonnet cross-region inference profile) ====================
-
-    const chatModel = bedrock.CrossRegionInferenceProfile.fromConfig({
-      geoRegion: bedrock.CrossRegionInferenceProfileRegion.US,
-      model: bedrock.BedrockFoundationModel.ANTHROPIC_CLAUDE_4_SONNET_V1_0,
-    });
-
     // ==================== DynamoDB ====================
 
     const connectionsTable = new dynamodb.Table(this, 'ConnectionsTable', {
@@ -121,13 +114,20 @@ export class KnowledgeAssistantStack extends cdk.Stack {
         CONNECTIONS_TABLE: connectionsTable.tableName,
         KNOWLEDGE_BASE_ID: knowledgeBase.knowledgeBaseId,
         MODEL_PROVIDER: 'bedrock',
-        MODEL_ID: chatModel.invokableArn,
+        // Use the system-defined inference profile ID for Claude 4 Sonnet in EU.
+        // This routes through Bedrock's managed inference profile instead of raw on-demand model id.
+        MODEL_ID: 'eu.anthropic.claude-4-sonnet-20250514-v1:0',
         CHAT_TABLE: chatHistoryTable.tableName,
       },
     });
     connectionsTable.grantReadWriteData(chatFn);
     chatHistoryTable.grantReadWriteData(chatFn);
-    chatModel.grantInvoke(chatFn);
+    chatFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['bedrock:InvokeModelWithResponseStream', 'bedrock:InvokeModel'],
+      resources: [
+        `arn:aws:bedrock:${this.region}::inference-profile/eu.anthropic.claude-4-sonnet-20250514-v1:0`,
+      ],
+    }));
 
     const historyFn = new lambda.Function(this, 'HistoryFunction', {
       runtime: lambda.Runtime.NODEJS_20_X,
