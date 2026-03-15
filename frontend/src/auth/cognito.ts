@@ -45,23 +45,38 @@ export function confirmSignUp(email: string, code: string): Promise<void> {
   });
 }
 
-export function signIn(
-  email: string,
-  password: string,
-): Promise<CognitoUserSession> {
-  return new Promise((resolve, reject) => {
-    const cognitoUser = new CognitoUser({
-      Username: email,
-      Pool: userPool,
-    });
+// Holds the CognitoUser object during a NEW_PASSWORD_REQUIRED challenge
+let _pendingUser: CognitoUser | null = null;
 
-    const authDetails = new AuthenticationDetails({
-      Username: email,
-      Password: password,
-    });
+export type SignInResult = CognitoUserSession | 'NEW_PASSWORD_REQUIRED';
+
+export function signIn(email: string, password: string): Promise<SignInResult> {
+  return new Promise((resolve, reject) => {
+    const cognitoUser = new CognitoUser({ Username: email, Pool: userPool });
+    const authDetails = new AuthenticationDetails({ Username: email, Password: password });
 
     cognitoUser.authenticateUser(authDetails, {
       onSuccess: (session) => resolve(session),
+      onFailure: (err) => reject(err),
+      newPasswordRequired: (_userAttributes, _requiredAttributes) => {
+        _pendingUser = cognitoUser;
+        resolve('NEW_PASSWORD_REQUIRED');
+      },
+    });
+  });
+}
+
+export function completeNewPassword(newPassword: string): Promise<CognitoUserSession> {
+  return new Promise((resolve, reject) => {
+    if (!_pendingUser) {
+      reject(new Error('No pending new-password challenge'));
+      return;
+    }
+    _pendingUser.completeNewPasswordChallenge(newPassword, {}, {
+      onSuccess: (session) => {
+        _pendingUser = null;
+        resolve(session);
+      },
       onFailure: (err) => reject(err),
     });
   });

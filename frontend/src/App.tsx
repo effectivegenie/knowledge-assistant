@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Layout, Card, Form, Input, Button, Spin, Typography, Space, Menu, Drawer, message, ConfigProvider } from 'antd';
-import { MailOutlined, LockOutlined, LogoutOutlined, TeamOutlined, UserOutlined, MessageOutlined, MenuOutlined } from '@ant-design/icons';
+import { MailOutlined, LockOutlined, LogoutOutlined, TeamOutlined, UserOutlined, MessageOutlined, MenuOutlined, KeyOutlined } from '@ant-design/icons';
 import { useAuth } from './auth/AuthContext';
 import ChatWidget from './components/ChatWidget';
 import AdminPage from './pages/AdminPage';
@@ -146,8 +146,77 @@ function AuthPage() {
   );
 }
 
+function NewPasswordPage() {
+  const { completeNewPassword, signOut } = useAuth();
+  const [form] = Form.useForm();
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (values: { newPassword: string; confirm: string }) => {
+    setLoading(true);
+    try {
+      await completeNewPassword(values.newPassword);
+      message.success('Password updated — welcome!');
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : 'Failed to set new password');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <ConfigProvider theme={AUTH_THEME}>
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'linear-gradient(160deg, #0d1b2a 0%, #1e3a5f 45%, #2c5282 100%)',
+      }}>
+        <Card style={{ width: 440, boxShadow: '0 12px 48px rgba(0,0,0,0.25)', borderRadius: 16 }}>
+          <div style={{ textAlign: 'center', marginBottom: 28 }}>
+            <KeyOutlined style={{ fontSize: 48, color: GOLD_DARK, marginBottom: 12, display: 'block' }} />
+            <Typography.Title level={3} style={{ margin: 0, color: BLUE, fontWeight: 700 }}>
+              Set a new password
+            </Typography.Title>
+            <Text style={{ color: BLUE_MUTED, marginTop: 6, display: 'block' }}>
+              Your temporary password has expired. Please choose a new one.
+            </Text>
+          </div>
+          <Form form={form} layout="vertical" onFinish={handleSubmit}>
+            <Form.Item name="newPassword" label={<span style={{ color: BLUE }}>New password</span>}
+              rules={[{ required: true, min: 8, message: 'Min 8 characters' }]}>
+              <Input.Password prefix={<LockOutlined style={{ color: BLUE_MUTED }} />} size="large" placeholder="New password" />
+            </Form.Item>
+            <Form.Item name="confirm" label={<span style={{ color: BLUE }}>Confirm password</span>}
+              dependencies={['newPassword']}
+              rules={[
+                { required: true, message: 'Please confirm your password' },
+                ({ getFieldValue }) => ({
+                  validator(_, value) {
+                    if (!value || getFieldValue('newPassword') === value) return Promise.resolve();
+                    return Promise.reject(new Error('Passwords do not match'));
+                  },
+                }),
+              ]}>
+              <Input.Password prefix={<LockOutlined style={{ color: BLUE_MUTED }} />} size="large" placeholder="Confirm password" />
+            </Form.Item>
+            <Form.Item style={{ marginBottom: 8 }}>
+              <Button type="primary" htmlType="submit" block size="large" loading={loading}>
+                Set password &amp; sign in
+              </Button>
+            </Form.Item>
+            <Button type="text" block onClick={signOut} style={{ color: BLUE_MUTED }}>
+              Back to sign in
+            </Button>
+          </Form>
+        </Card>
+      </div>
+    </ConfigProvider>
+  );
+}
+
 export default function App() {
-  const { isLoading, isAuthenticated, user, signOut, isRootAdmin, isTenantAdmin } = useAuth();
+  const { isLoading, isAuthenticated, needsNewPassword, user, signOut, isRootAdmin, isTenantAdmin } = useAuth();
   const [view, setView] = useState<View>('chat');
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -164,6 +233,7 @@ export default function App() {
     );
   }
 
+  if (!isAuthenticated && needsNewPassword) return <NewPasswordPage />;
   if (!isAuthenticated) return <AuthPage />;
 
   const menuItems = isRootAdmin

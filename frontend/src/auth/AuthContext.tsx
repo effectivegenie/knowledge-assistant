@@ -11,6 +11,7 @@ import {
   signUp as cognitoSignUp,
   confirmSignUp as cognitoConfirmSignUp,
   signOut as cognitoSignOut,
+  completeNewPassword as cognitoCompleteNewPassword,
   getCurrentSession,
 } from './cognito';
 
@@ -26,9 +27,11 @@ interface AuthContextType {
   idToken: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  needsNewPassword: boolean;
   isRootAdmin: boolean;
   isTenantAdmin: boolean;
   signIn: (email: string, password: string) => Promise<void>;
+  completeNewPassword: (newPassword: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   confirmSignUp: (email: string, code: string) => Promise<void>;
   signOut: () => void;
@@ -51,6 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [idToken, setIdToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [needsNewPassword, setNeedsNewPassword] = useState(false);
 
   useEffect(() => {
     getCurrentSession()
@@ -66,7 +70,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {
-    const session = await cognitoSignIn(email, password);
+    const result = await cognitoSignIn(email, password);
+    if (result === 'NEW_PASSWORD_REQUIRED') {
+      setNeedsNewPassword(true);
+      return;
+    }
+    const token = result.getIdToken().getJwtToken();
+    setIdToken(token);
+    setUser(parseIdToken(token));
+  }, []);
+
+  const completeNewPassword = useCallback(async (newPassword: string) => {
+    const session = await cognitoCompleteNewPassword(newPassword);
+    setNeedsNewPassword(false);
     const token = session.getIdToken().getJwtToken();
     setIdToken(token);
     setUser(parseIdToken(token));
@@ -84,6 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     cognitoSignOut();
     setUser(null);
     setIdToken(null);
+    setNeedsNewPassword(false);
   }, []);
 
   const value: AuthContextType = {
@@ -91,9 +108,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     idToken,
     isLoading,
     isAuthenticated: !!user,
+    needsNewPassword,
     isRootAdmin: !!user?.groups?.includes('RootAdmin'),
     isTenantAdmin: !!user?.groups?.includes('TenantAdmin'),
     signIn,
+    completeNewPassword,
     signUp,
     confirmSignUp,
     signOut,
