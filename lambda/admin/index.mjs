@@ -200,105 +200,115 @@ export const handler = async (event) => {
 
   // ── DELETE /tenants/{tenantId} ────────────────────────────────────────────
   if (method === 'DELETE' && tenantIdParam) {
-    // Fetch tenant record first to get dataSourceId, knowledgeBaseId
-    let tenantItem;
     try {
-      const getRes = await dynamo.send(new GetItemCommand({
-        TableName: TENANTS_TABLE,
-        Key: { tenantId: { S: tenantIdParam } },
-      }));
-      tenantItem = getRes.Item;
-    } catch (err) {
-      console.error('Error fetching tenant record:', err);
-    }
-    const kbId = tenantItem?.knowledgeBaseId?.S;
-    const dsId = tenantItem?.dataSourceId?.S;
-
-    // 1. Delete S3 objects under tenant prefix
-    if (DOCS_BUCKET_NAME) {
+      // Fetch tenant record first to get dataSourceId, knowledgeBaseId
+      let tenantItem;
       try {
-        let continuationToken;
-        do {
-          const listRes = await s3.send(new ListObjectsV2Command({
-            Bucket: DOCS_BUCKET_NAME,
-            Prefix: `${tenantIdParam}/`,
-            ContinuationToken: continuationToken,
-          }));
-          const objects = (listRes.Contents || []).map(o => ({ Key: o.Key }));
-          if (objects.length > 0) {
-            await s3.send(new DeleteObjectsCommand({
-              Bucket: DOCS_BUCKET_NAME,
-              Delete: { Objects: objects, Quiet: true },
-            }));
-            console.log('Deleted', objects.length, 'S3 objects for tenant', tenantIdParam);
-          }
-          continuationToken = listRes.IsTruncated ? listRes.NextContinuationToken : undefined;
-        } while (continuationToken);
-      } catch (err) {
-        console.error('Error deleting S3 objects (non-fatal):', err);
-      }
-    }
-
-    // 2. Delete Bedrock data source (skip if it's the shared default)
-    if (kbId && dsId && dsId !== DEFAULT_DATA_SOURCE_ID) {
-      try {
-        await bedrockAgent.send(new DeleteDataSourceCommand({
-          knowledgeBaseId: kbId,
-          dataSourceId: dsId,
+        const getRes = await dynamo.send(new GetItemCommand({
+          TableName: TENANTS_TABLE,
+          Key: { tenantId: { S: tenantIdParam } },
         }));
-        console.log('Deleted Bedrock data source', dsId, 'for tenant', tenantIdParam);
+        tenantItem = getRes.Item;
       } catch (err) {
-        console.error('Error deleting Bedrock data source (non-fatal):', err);
+        console.error('Error fetching tenant record (non-fatal):', err);
       }
-    }
+      const kbId = tenantItem?.knowledgeBaseId?.S;
+      const dsId = tenantItem?.dataSourceId?.S;
 
-    // 3. Delete chat history from DynamoDB
-    if (CHAT_TABLE) {
-      try {
-        let lastKey;
-        do {
-          const scanRes = await dynamo.send(new ScanCommand({
-            TableName: CHAT_TABLE,
-            FilterExpression: 'begins_with(tenantUser, :prefix)',
-            ExpressionAttributeValues: { ':prefix': { S: `${tenantIdParam}#` } },
-            ExclusiveStartKey: lastKey,
+      // 1. Delete S3 objects under tenant prefix
+      if (DOCS_BUCKET_NAME) {
+        try {
+          let continuationToken;
+          do {
+            const listRes = await s3.send(new ListObjectsV2Command({
+              Bucket: DOCS_BUCKET_NAME,
+              Prefix: `${tenantIdParam}/`,
+              ContinuationToken: continuationToken,
+            }));
+            const objects = (listRes.Contents || []).map(o => ({ Key: o.Key }));
+            if (objects.length > 0) {
+              await s3.send(new DeleteObjectsCommand({
+                Bucket: DOCS_BUCKET_NAME,
+                Delete: { Objects: objects, Quiet: true },
+              }));
+              console.log('Deleted', objects.length, 'S3 objects for tenant', tenantIdParam);
+            }
+            continuationToken = listRes.IsTruncated ? listRes.NextContinuationToken : undefined;
+          } while (continuationToken);
+        } catch (err) {
+          console.error('Error deleting S3 objects (non-fatal):', err);
+        }
+      }
+
+      // 2. Delete Bedrock data source (skip if it's the shared default)
+      if (kbId && dsId && dsId !== DEFAULT_DATA_SOURCE_ID) {
+        try {
+          await bedrockAgent.send(new DeleteDataSourceCommand({
+            knowledgeBaseId: kbId,
+            dataSourceId: dsId,
           }));
-          const items = scanRes.Items || [];
-          await Promise.all(items.map(item =>
-            dynamo.send(new DeleteItemCommand({
-              TableName: CHAT_TABLE,
-              Key: { tenantUser: item.tenantUser, timestamp: item.timestamp },
-            }))
-          ));
-          console.log('Deleted', items.length, 'chat history items for tenant', tenantIdParam);
-          lastKey = scanRes.LastEvaluatedKey;
-        } while (lastKey);
-      } catch (err) {
-        console.error('Error deleting chat history (non-fatal):', err);
+          console.log('Deleted Bedrock data source', dsId, 'for tenant', tenantIdParam);
+        } catch (err) {
+          console.error('Error deleting Bedrock data source (non-fatal):', err.message);
+        }
       }
-    }
 
-    // 4. Delete DynamoDB tenant record
-    await dynamo.send(new DeleteItemCommand({
-      TableName: TENANTS_TABLE,
-      Key: { tenantId: { S: tenantIdParam } },
-    }));
+      // 3. Delete chat history from DynamoDB
+      if (CHAT_TABLE) {
+        try {
+          let lastKey;
+          do {
+            const scanRes = await dynamo.send(new ScanCommand({
+              TableName: CHAT_TABLE,
+              FilterExpression: 'begins_with(tenantUser, :prefix)',
+              ExpressionAttributeValues: { ':prefix': { S: `${tenantIdParam}#` } },
+              ExclusiveStartKey: lastKey,
+            }));
+            const items = scanRes.Items || [];
+            await Promise.all(items.map(item =>
+              dynamo.send(new DeleteItemCommand({
+                TableName: CHAT_TABLE,
+                Key: { tenantUser: item.tenantUser, timestamp: item.timestamp },
+              }))
+            ));
+            console.log('Deleted', items.length, 'chat history items for tenant', tenantIdParam);
+            lastKey = scanRes.LastEvaluatedKey;
+          } while (lastKey);
+        } catch (err) {
+          console.error('Error deleting chat history (non-fatal):', err);
+        }
+      }
 
-    // 5. Delete all Cognito users belonging to this tenant
-    try {
-      const list = await cognito.send(new ListUsersCommand({ UserPoolId: USER_POOL_ID, Limit: 60 }));
-      const toDelete = (list.Users || []).filter(u =>
-        (u.Attributes || []).some(a => a.Name === 'custom:tenantId' && a.Value === tenantIdParam)
-      );
-      await Promise.all(toDelete.map(u =>
-        cognito.send(new AdminDeleteUserCommand({ UserPoolId: USER_POOL_ID, Username: u.Username }))
-      ));
-      console.log('Deleted', toDelete.length, 'Cognito users for tenant', tenantIdParam);
+      // 4. Delete DynamoDB tenant record
+      try {
+        await dynamo.send(new DeleteItemCommand({
+          TableName: TENANTS_TABLE,
+          Key: { tenantId: { S: tenantIdParam } },
+        }));
+      } catch (err) {
+        console.error('Error deleting tenant DynamoDB record:', err);
+        throw err; // re-throw — this is the critical step
+      }
+
+      // 5. Delete all Cognito users belonging to this tenant
+      try {
+        const list = await cognito.send(new ListUsersCommand({ UserPoolId: USER_POOL_ID, Limit: 60 }));
+        const toDelete = (list.Users || []).filter(u =>
+          (u.Attributes || []).some(a => a.Name === 'custom:tenantId' && a.Value === tenantIdParam)
+        );
+        await Promise.all(toDelete.map(u =>
+          cognito.send(new AdminDeleteUserCommand({ UserPoolId: USER_POOL_ID, Username: u.Username }))
+        ));
+        console.log('Deleted', toDelete.length, 'Cognito users for tenant', tenantIdParam);
+      } catch (err) {
+        console.error('Error deleting Cognito users (non-fatal):', err);
+      }
+
+      return jsonResponse(200, { deleted: tenantIdParam });
     } catch (err) {
-      console.error('Error deleting Cognito users (non-fatal):', err);
+      console.error('DELETE /tenants error:', err);
+      return jsonResponse(500, { error: err.message || 'Failed to delete tenant' });
     }
-
-    return jsonResponse(200, { deleted: tenantIdParam });
   }
 
   return jsonResponse(404, { error: 'Not found' });
