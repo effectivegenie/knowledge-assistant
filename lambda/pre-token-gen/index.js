@@ -1,9 +1,8 @@
 /**
- * Pre token generation: add cognito:groups and custom:tenantId to ID token.
- * Supports both legacy (claimsOverrideDetails) and V2 (claimsAndScopeOverrideDetails).
- * Uses callback to maximize Cognito compatibility.
+ * Pre token generation (legacy V1): add cognito:groups and custom:tenantId to ID token.
+ * Returns ONLY claimsOverrideDetails – version '1' does not support claimsAndScopeOverrideDetails.
  */
-exports.handler = (event, context, callback) => {
+exports.handler = async (event) => {
   console.log('PreTokenGen invoked', {
     triggerSource: event.triggerSource,
     version: event.version,
@@ -19,27 +18,31 @@ exports.handler = (event, context, callback) => {
     claimsToAddOrOverride['custom:tenantId'] = String(tenantId);
   }
 
-  const response = {
-    claimsOverrideDetails: {
-      claimsToAddOrOverride,
-    },
-    claimsAndScopeOverrideDetails: {
-      idTokenGeneration: {
-        claimsToAddOrOverride,
-      },
-    },
-  };
-
   const result = {
     version: event.version,
     triggerSource: event.triggerSource,
     region: event.region,
     userPoolId: event.userPoolId,
     userName: event.userName,
-    request: event.request,
-    response,
+    request: JSON.parse(JSON.stringify(event.request || {})),
+    response: {
+      claimsOverrideDetails: {
+        claimsToAddOrOverride,
+      },
+    },
   };
 
-  console.log('Returning response keys:', Object.keys(response));
-  callback(null, result);
+  let jsonStr;
+  try {
+    jsonStr = JSON.stringify(result);
+  } catch (err) {
+    console.error('JSON.stringify failed', err);
+    throw err;
+  }
+  console.log('Return topLevelKeys', Object.keys(result));
+  console.log('Return response keys', Object.keys(result.response));
+  console.log('Return payload length', jsonStr.length);
+  console.log('Return payload preview', jsonStr.substring(0, 800));
+
+  return JSON.parse(jsonStr);
 };
