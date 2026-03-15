@@ -22,4 +22,4 @@ export const config: AppConfig = {
 };
 
 /** Admin REST API base URL (for tenants and tenant users). */
-export const adminApiUrl: string = config.adminApiUrl;
+export const adminApiUrl: string = config.adminApiUrl.replace(/\/$/, '');
