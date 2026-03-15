@@ -98,7 +98,7 @@ export default function ChatWidget() {
             >
               {msg.role === 'assistant' && (
                 <Avatar
-                  size="small"
+                  size={60}
                   src="/genie-logo-final-2-no-text.png"
                   alt="Knowledge Genie"
                   style={{
