@@ -341,18 +341,23 @@ export class KnowledgeAssistantStack extends cdk.Stack {
       runtime: lambda.Runtime.NODEJS_20_X,
       handler: 'index.handler',
       code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/admin')),
-      timeout: cdk.Duration.seconds(30),
+      timeout: cdk.Duration.seconds(60),
       environment: {
         TENANTS_TABLE: tenantsTable.tableName,
         USER_POOL_ID: userPool.userPoolId,
         DEFAULT_KNOWLEDGE_BASE_ID: knowledgeBase.knowledgeBaseId,
         DEFAULT_DATA_SOURCE_ID: docsDataSource.dataSourceId,
+        DOCS_BUCKET_ARN: docsBucket.bucketArn,
       },
     });
     tenantsTable.grantReadWriteData(adminFn);
     adminFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['cognito-idp:AdminCreateUser', 'cognito-idp:AdminAddUserToGroup', 'cognito-idp:ListUsers'],
       resources: [userPool.userPoolArn],
+    }));
+    adminFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['bedrock:CreateDataSource'],
+      resources: [`arn:aws:bedrock:${this.region}:${this.account}:knowledge-base/${knowledgeBase.knowledgeBaseId}`],
     }));
 
     const tenantAdminFn = new lambda.Function(this, 'TenantAdminFunction', {

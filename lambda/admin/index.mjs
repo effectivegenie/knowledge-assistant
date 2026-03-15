@@ -1,13 +1,16 @@
 import { DynamoDBClient, ScanCommand, PutItemCommand } from '@aws-sdk/client-dynamodb';
-import { CognitoIdentityProviderClient, AdminCreateUserCommand, AdminAddUserToGroupCommand, AdminSetUserMFAPreferenceCommand } from '@aws-sdk/client-cognito-identity-provider';
+import { CognitoIdentityProviderClient, AdminCreateUserCommand, AdminAddUserToGroupCommand } from '@aws-sdk/client-cognito-identity-provider';
+import { BedrockAgentClient, CreateDataSourceCommand } from '@aws-sdk/client-bedrock-agent';
 
 const dynamo = new DynamoDBClient({});
 const cognito = new CognitoIdentityProviderClient({});
+const bedrockAgent = new BedrockAgentClient({});
 
 const TENANTS_TABLE = process.env.TENANTS_TABLE;
 const USER_POOL_ID = process.env.USER_POOL_ID;
 const DEFAULT_KNOWLEDGE_BASE_ID = process.env.DEFAULT_KNOWLEDGE_BASE_ID;
 const DEFAULT_DATA_SOURCE_ID = process.env.DEFAULT_DATA_SOURCE_ID;
+const DOCS_BUCKET_ARN = process.env.DOCS_BUCKET_ARN;
 const TENANT_ADMIN_GROUP = 'TenantAdmin';
 
 function parseBody(event) {
@@ -29,9 +32,17 @@ function jsonResponse(statusCode, data) {
 function getGroupsFromClaims(event) {
   const auth = event.requestContext?.authorizer?.jwt?.claims;
   if (!auth) return [];
-  const groups = auth['cognito:groups'];
-  if (typeof groups === 'string') return [groups];
-  if (Array.isArray(groups)) return groups;
+  const raw = auth['cognito:groups'];
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'string') {
+    // API GW may pass Cognito array claims as a JSON string e.g. '["RootAdmin"]'
+    if (raw.startsWith('[')) {
+      try { return JSON.parse(raw); } catch {}
+    }
+    // or space-separated: 'RootAdmin TenantAdmin'
+    return raw.split(/\s+/).filter(Boolean);
+  }
   return [];
 }
 
@@ -102,13 +113,35 @@ export const handler = async (event) => {
       return jsonResponse(400, { error: 'Failed to create tenant admin user', detail: err.message });
     }
 
+    // Provision per-tenant Bedrock data source scoped to this tenant's S3 prefix
+    let dataSourceId = DEFAULT_DATA_SOURCE_ID || '';
+    if (DEFAULT_KNOWLEDGE_BASE_ID && DOCS_BUCKET_ARN) {
+      try {
+        const dsResult = await bedrockAgent.send(new CreateDataSourceCommand({
+          knowledgeBaseId: DEFAULT_KNOWLEDGE_BASE_ID,
+          name: `ds-${id}`,
+          dataSourceConfiguration: {
+            type: 'S3',
+            s3Configuration: {
+              bucketArn: DOCS_BUCKET_ARN,
+              inclusionPrefixes: [`${id}/`],
+            },
+          },
+        }));
+        dataSourceId = dsResult.dataSource.dataSourceId;
+        console.log('Created data source', dataSourceId, 'for tenant', id);
+      } catch (err) {
+        console.error('Bedrock CreateDataSource error (falling back to default):', err);
+      }
+    }
+
     await dynamo.send(new PutItemCommand({
       TableName: TENANTS_TABLE,
       Item: {
         tenantId: { S: id },
         name: { S: String(name) },
         knowledgeBaseId: { S: DEFAULT_KNOWLEDGE_BASE_ID || '' },
-        dataSourceId: { S: DEFAULT_DATA_SOURCE_ID || '' },
+        dataSourceId: { S: dataSourceId },
         docsPrefix: { S: `${id}/` },
         createdAt: { S: new Date().toISOString() },
       },
