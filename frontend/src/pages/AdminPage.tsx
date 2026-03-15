@@ -52,15 +52,20 @@ export default function AdminPage() {
   const headers = { Authorization: `Bearer ${idToken}` };
 
   const fetchTenants = async () => {
+    if (!idToken) return;
     if (!adminApiUrl || adminApiUrl.startsWith('REPLACE')) { setLoading(false); return; }
     setLoading(true);
     try {
       const res = await fetch(`${adminApiUrl}/tenants`, { headers });
-      if (!res.ok) throw new Error(res.statusText);
+      if (!res.ok) {
+        let errMsg = `${res.status} ${res.statusText}`;
+        try { const d = await res.json(); if (d.error) errMsg = `${res.status}: ${d.error}`; } catch {}
+        throw new Error(errMsg);
+      }
       const data = await res.json();
       setTenants(data.tenants || []);
-    } catch {
-      message.error('Failed to load tenants');
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : 'Failed to load tenants');
       setTenants([]);
     } finally {
       setLoading(false);

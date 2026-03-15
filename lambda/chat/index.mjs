@@ -83,23 +83,44 @@ export const handler = async (event) => {
     let context = '';
     if (knowledgeBaseId) {
       try {
-        const vectorSearchConfiguration = { numberOfResults: 5 };
-        if (docsPrefix && DOCS_BUCKET_NAME) {
-          vectorSearchConfiguration.filter = {
-            startsWith: {
-              key: 'x-amz-bedrock-kb-source-uri',
-              value: `s3://${DOCS_BUCKET_NAME}/${docsPrefix}`,
-            },
-          };
+        const sourcePrefix = docsPrefix && DOCS_BUCKET_NAME
+          ? `s3://${DOCS_BUCKET_NAME}/${docsPrefix}`
+          : null;
+
+        // Try with source URI filter first; fall back to unfiltered if filter throws or returns 0 results
+        let retrievalResults = [];
+        if (sourcePrefix) {
+          try {
+            const resp = await bedrockAgentClient.send(new RetrieveCommand({
+              knowledgeBaseId,
+              retrievalQuery: { text: prompt },
+              retrievalConfiguration: {
+                vectorSearchConfiguration: {
+                  numberOfResults: 5,
+                  filter: { startsWith: { key: 'x-amz-bedrock-kb-source-uri', value: sourcePrefix } },
+                },
+              },
+            }));
+            retrievalResults = resp.retrievalResults || [];
+          } catch (filterErr) {
+            console.warn('RAG filter query failed, retrying without filter:', filterErr.message);
+          }
         }
-        const retrieveResponse = await bedrockAgentClient.send(new RetrieveCommand({
-          knowledgeBaseId,
-          retrievalQuery: { text: prompt },
-          retrievalConfiguration: { vectorSearchConfiguration },
-        }));
-        context = (retrieveResponse.retrievalResults || [])
-          .map((r) => r.content.text)
-          .join('\n\n---\n\n');
+
+        // Fallback: retrieve without filter and post-filter by source URI prefix
+        if (retrievalResults.length === 0) {
+          const resp = await bedrockAgentClient.send(new RetrieveCommand({
+            knowledgeBaseId,
+            retrievalQuery: { text: prompt },
+            retrievalConfiguration: { vectorSearchConfiguration: { numberOfResults: 10 } },
+          }));
+          const all = resp.retrievalResults || [];
+          retrievalResults = sourcePrefix
+            ? all.filter(r => r.location?.s3Location?.uri?.startsWith(sourcePrefix))
+            : all;
+        }
+
+        context = retrievalResults.map((r) => r.content.text).join('\n\n---\n\n');
       } catch (err) {
         console.error('RAG retrieve error (tenant:', tenantId, 'kb:', knowledgeBaseId, 'prefix:', docsPrefix, '):', err);
         context = '';

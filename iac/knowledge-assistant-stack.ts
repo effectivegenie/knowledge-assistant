@@ -103,6 +103,13 @@ export class KnowledgeAssistantStack extends cdk.Stack {
       instruction: 'Use this knowledge base to answer questions based on the uploaded documents.',
     });
 
+    // Grant Bedrock KB execution role permission to delete vectors from S3 Vectors store
+    // (required for data source deletion without dataDeletionPolicy=RETAIN)
+    knowledgeBase.role.addToPrincipalPolicy(new iam.PolicyStatement({
+      actions: ['s3vectors:DeleteVectors', 's3vectors:ListVectors'],
+      resources: [vectorIndex.vectorIndexArn],
+    }));
+
     const docsDataSource = new bedrock.S3DataSource(this, 'DocsDataSource', {
       bucket: docsBucket,
       knowledgeBase,
