@@ -1,5 +1,6 @@
 import * as cdk from 'aws-cdk-lib';
 import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as s3n from 'aws-cdk-lib/aws-s3-notifications';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
@@ -68,7 +69,7 @@ export class KnowledgeAssistantStack extends cdk.Stack {
       instruction: 'Use this knowledge base to answer questions based on the uploaded documents.',
     });
 
-    new bedrock.S3DataSource(this, 'DocsDataSource', {
+    const docsDataSource = new bedrock.S3DataSource(this, 'DocsDataSource', {
       bucket: docsBucket,
       knowledgeBase,
       dataSourceName: 'documents',
@@ -91,6 +92,28 @@ export class KnowledgeAssistantStack extends cdk.Stack {
     });
 
     // ==================== Lambda Functions ====================
+
+    const kbSyncFn = new lambda.Function(this, 'KnowledgeBaseSyncFunction', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: 'index.handler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/sync')),
+      timeout: cdk.Duration.minutes(1),
+      memorySize: 256,
+      environment: {
+        KNOWLEDGE_BASE_ID: knowledgeBase.knowledgeBaseId,
+        DATA_SOURCE_ID: docsDataSource.dataSourceId,
+      },
+    });
+
+    docsBucket.addEventNotification(
+      s3.EventType.OBJECT_CREATED,
+      new s3n.LambdaDestination(kbSyncFn),
+    );
+
+    kbSyncFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['bedrock:StartIngestionJob'],
+      resources: [`arn:aws:bedrock:${this.region}:${this.account}:knowledge-base/${knowledgeBase.knowledgeBaseId}`],
+    }));
 
     const connectFn = new lambda.Function(this, 'ConnectFunction', {
       runtime: lambda.Runtime.NODEJS_20_X,
