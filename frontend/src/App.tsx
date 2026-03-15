@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Layout, Card, Form, Input, Button, Spin, Typography, Space, Menu, message } from 'antd';
+import { Layout, Card, Form, Input, Button, Spin, Typography, Space, Menu, message, ConfigProvider } from 'antd';
 import { MailOutlined, LockOutlined, LogoutOutlined, TeamOutlined, UserOutlined, MessageOutlined } from '@ant-design/icons';
 import { useAuth } from './auth/AuthContext';
 import ChatWidget from './components/ChatWidget';
@@ -8,6 +8,15 @@ import TenantAdminPage from './pages/TenantAdminPage';
 
 const { Header, Content } = Layout;
 const { Text } = Typography;
+
+// Brand colors from logo: gold/amber + deep blue
+const AUTH_THEME = {
+  token: {
+    colorPrimary: '#e6a800',
+    colorPrimaryHover: '#f0b429',
+    colorPrimaryActive: '#cc9200',
+  },
+};
 
 type View = 'chat' | 'admin' | 'tenant-admin';
 
@@ -29,57 +38,72 @@ function AuthPage() {
   };
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'linear-gradient(135deg, #e6f4ff 0%, #ffffff 100%)',
-      }}
-    >
-      <Card
+    <ConfigProvider theme={AUTH_THEME}>
+      <div
         style={{
-          width: 420,
-          boxShadow: '0 4px 24px rgba(0, 0, 0, 0.08)',
-          borderRadius: 12,
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'linear-gradient(160deg, #0d1b2a 0%, #1e3a5f 45%, #2c5282 100%)',
+          fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
         }}
       >
-        <div style={{ textAlign: 'center', marginBottom: 24 }}>
-          <img
-            src="/genie-logo-final-2.png"
-            alt="Knowledge Genie"
-            style={{ width: 80, height: 80, objectFit: 'contain', marginBottom: 8 }}
-          />
-          <Typography.Title level={3} style={{ margin: 0 }}>
-            Knowledge Genie
-          </Typography.Title>
-          <Text type="secondary">Sign in</Text>
-        </div>
-        <Form form={form} onFinish={handleSignIn} layout="vertical">
-          <Form.Item
-            name="email"
-            rules={[
-              { required: true, message: 'Please enter your email' },
-              { type: 'email', message: 'Please enter a valid email' },
-            ]}
-          >
-            <Input prefix={<MailOutlined />} size="large" placeholder="Email" />
-          </Form.Item>
-          <Form.Item
-            name="password"
-            rules={[{ required: true, message: 'Please enter your password' }]}
-          >
-            <Input.Password prefix={<LockOutlined />} size="large" placeholder="Password" />
-          </Form.Item>
-          <Form.Item style={{ marginBottom: 0 }}>
-            <Button type="primary" htmlType="submit" block size="large" loading={loading}>
-              Sign In
-            </Button>
-          </Form.Item>
-        </Form>
-      </Card>
-    </div>
+        <Card
+          style={{
+            width: 440,
+            boxShadow: '0 12px 48px rgba(0, 0, 0, 0.25)',
+            borderRadius: 16,
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+          }}
+        >
+          <div style={{ textAlign: 'center', marginBottom: 28 }}>
+            <img
+              src="/genie-logo-final-2.png"
+              alt="Knowledge Genie"
+              style={{ width: 200, height: 200, objectFit: 'contain', marginBottom: 16 }}
+            />
+            <Typography.Title
+              level={2}
+              style={{
+                margin: 0,
+                color: '#1e3a5f',
+                fontWeight: 700,
+                fontSize: 26,
+                letterSpacing: '-0.02em',
+              }}
+            >
+              Knowledge Genie
+            </Typography.Title>
+            <Text style={{ color: '#64748b', fontSize: 15, marginTop: 4, display: 'block' }}>
+              Sign in
+            </Text>
+          </div>
+          <Form form={form} onFinish={handleSignIn} layout="vertical">
+            <Form.Item
+              name="email"
+              rules={[
+                { required: true, message: 'Please enter your email' },
+                { type: 'email', message: 'Please enter a valid email' },
+              ]}
+            >
+              <Input prefix={<MailOutlined />} size="large" placeholder="Email" />
+            </Form.Item>
+            <Form.Item
+              name="password"
+              rules={[{ required: true, message: 'Please enter your password' }]}
+            >
+              <Input.Password prefix={<LockOutlined />} size="large" placeholder="Password" />
+            </Form.Item>
+            <Form.Item style={{ marginBottom: 0 }}>
+              <Button type="primary" htmlType="submit" block size="large" loading={loading}>
+                Sign In
+              </Button>
+            </Form.Item>
+          </Form>
+        </Card>
+      </div>
+    </ConfigProvider>
   );
 }
 
