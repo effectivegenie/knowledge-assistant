@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Card, Table, Button, Form, Input, Modal, Space, Typography, message } from 'antd';
 import { PlusOutlined, TeamOutlined } from '@ant-design/icons';
 import { useAuth } from '../auth/AuthContext';
-import { config } from '../config';
+import { adminApiUrl } from '../config';
 
 const { Title } = Typography;
 
@@ -21,13 +21,13 @@ export default function AdminPage() {
   const [form] = Form.useForm();
 
   const fetchTenants = async () => {
-    if (!config.adminApiUrl || config.adminApiUrl.startsWith('REPLACE')) {
+    if (!adminApiUrl || adminApiUrl.startsWith('REPLACE')) {
       setLoading(false);
       return;
     }
     setLoading(true);
     try {
-      const res = await fetch(`${config.adminApiUrl}/tenants`, {
+      const res = await fetch(`${adminApiUrl}/tenants`, {
         headers: { Authorization: `Bearer ${idToken}` },
       });
       if (!res.ok) throw new Error(res.statusText);
@@ -48,7 +48,7 @@ export default function AdminPage() {
   const handleCreate = async (values: { tenantId: string; name: string; adminEmail: string; temporaryPassword: string }) => {
     setSubmitting(true);
     try {
-      const res = await fetch(`${config.adminApiUrl}/tenants`, {
+      const res = await fetch(`${adminApiUrl}/tenants`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
         body: JSON.stringify({

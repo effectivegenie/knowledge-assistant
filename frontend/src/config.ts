@@ -20,3 +20,6 @@ export const config: AppConfig = {
   },
   adminApiUrl: 'REPLACE_AFTER_CDK_DEPLOY',
 };
+
+/** Admin REST API base URL (for tenants and tenant users). */
+export const adminApiUrl: string = config.adminApiUrl;

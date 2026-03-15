@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Card, Table, Button, Form, Input, Modal, Space, Typography, message } from 'antd';
 import { PlusOutlined, UserOutlined } from '@ant-design/icons';
 import { useAuth } from '../auth/AuthContext';
-import { config } from '../config';
+import { adminApiUrl } from '../config';
 
 const { Title } = Typography;
 
@@ -23,13 +23,13 @@ export default function TenantAdminPage() {
   const [form] = Form.useForm();
 
   const fetchUsers = async () => {
-    if (!config.adminApiUrl || config.adminApiUrl.startsWith('REPLACE')) {
+    if (!adminApiUrl || adminApiUrl.startsWith('REPLACE')) {
       setLoading(false);
       return;
     }
     setLoading(true);
     try {
-      const res = await fetch(`${config.adminApiUrl}/tenants/${encodeURIComponent(tenantId)}/users`, {
+      const res = await fetch(`${adminApiUrl}/tenants/${encodeURIComponent(tenantId)}/users`, {
         headers: { Authorization: `Bearer ${idToken}` },
       });
       if (!res.ok) throw new Error(res.statusText);
@@ -50,7 +50,7 @@ export default function TenantAdminPage() {
   const handleCreate = async (values: { email: string; temporaryPassword: string }) => {
     setSubmitting(true);
     try {
-      const res = await fetch(`${config.adminApiUrl}/tenants/${encodeURIComponent(tenantId)}/users`, {
+      const res = await fetch(`${adminApiUrl}/tenants/${encodeURIComponent(tenantId)}/users`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
         body: JSON.stringify({
