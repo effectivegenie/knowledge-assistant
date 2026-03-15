@@ -36,19 +36,31 @@ function getGroupsFromClaims(event) {
   if (!raw) return [];
   if (Array.isArray(raw)) return raw;
   if (typeof raw === 'string') {
-    // API GW may pass Cognito array claims as a JSON string e.g. '["RootAdmin"]'
+    // JSON array string e.g. '["RootAdmin"]'
     if (raw.startsWith('[')) {
       try { return JSON.parse(raw); } catch {}
     }
-    // or space-separated: 'RootAdmin TenantAdmin'
-    return raw.split(/\s+/).filter(Boolean);
+    // AWS HTTP API passes array claims as comma-separated: 'RootAdmin,TenantAdmin'
+    // or space-separated depending on version; handle both
+    return raw.split(/[\s,]+/).filter(Boolean);
   }
   return [];
 }
 
 export const handler = async (event) => {
+  const auth = event.requestContext?.authorizer?.jwt?.claims || {};
+  console.log('AdminFn claims:', JSON.stringify({
+    sub: auth['sub'],
+    email: auth['email'],
+    groups_raw: auth['cognito:groups'],
+    groups_type: typeof auth['cognito:groups'],
+    path: event.requestContext?.http?.path,
+    method: event.requestContext?.http?.method,
+  }));
+
   const groups = getGroupsFromClaims(event);
   const isRootAdmin = groups.includes('RootAdmin');
+  console.log('AdminFn parsed groups:', groups, 'isRootAdmin:', isRootAdmin);
   const path = event.requestContext?.http?.path || event.path || '';
   const method = event.requestContext?.http?.method || event.httpMethod || '';
 
