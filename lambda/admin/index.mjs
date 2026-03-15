@@ -1,6 +1,6 @@
 import { DynamoDBClient, ScanCommand, PutItemCommand, DeleteItemCommand, UpdateItemCommand, GetItemCommand } from '@aws-sdk/client-dynamodb';
 import { CognitoIdentityProviderClient, AdminCreateUserCommand, AdminAddUserToGroupCommand, AdminDeleteUserCommand, ListUsersCommand } from '@aws-sdk/client-cognito-identity-provider';
-import { BedrockAgentClient, CreateDataSourceCommand, DeleteDataSourceCommand, StartIngestionJobCommand } from '@aws-sdk/client-bedrock-agent';
+import { BedrockAgentClient, CreateDataSourceCommand, UpdateDataSourceCommand, DeleteDataSourceCommand, StartIngestionJobCommand } from '@aws-sdk/client-bedrock-agent';
 import { S3Client, PutObjectCommand, ListObjectsV2Command, DeleteObjectsCommand } from '@aws-sdk/client-s3';
 
 const dynamo      = new DynamoDBClient({});
@@ -136,6 +136,7 @@ export const handler = async (event) => {
             type: 'S3',
             s3Configuration: { bucketArn: DOCS_BUCKET_ARN, inclusionPrefixes: [`${id}/`] },
           },
+          dataDeletionPolicy: 'RETAIN',
         }));
         dataSourceId = dsResult.dataSource.dataSourceId;
         console.log('Created data source', dataSourceId, 'for tenant', id);
@@ -243,6 +244,17 @@ export const handler = async (event) => {
       // 2. Delete Bedrock data source (skip if it's the shared default)
       if (kbId && dsId && dsId !== DEFAULT_DATA_SOURCE_ID) {
         try {
+          // Set RETAIN so Bedrock doesn't attempt to delete vectors from the vector store
+          await bedrockAgent.send(new UpdateDataSourceCommand({
+            knowledgeBaseId: kbId,
+            dataSourceId: dsId,
+            name: `ds-${tenantIdParam}`,
+            dataSourceConfiguration: {
+              type: 'S3',
+              s3Configuration: { bucketArn: DOCS_BUCKET_ARN, inclusionPrefixes: [`${tenantIdParam}/`] },
+            },
+            dataDeletionPolicy: 'RETAIN',
+          }));
           await bedrockAgent.send(new DeleteDataSourceCommand({
             knowledgeBaseId: kbId,
             dataSourceId: dsId,
