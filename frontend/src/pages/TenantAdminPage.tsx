@@ -125,11 +125,17 @@ export default function TenantAdminPage() {
       />
 
       <Drawer
-        title="Add user"
+        title={<span style={{ color: '#fff', fontWeight: 700 }}>Add user</span>}
         placement="right"
         open={drawerOpen}
         onClose={() => { setDrawerOpen(false); form.resetFields(); }}
         width={360}
+        closeIcon={<span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 16 }}>✕</span>}
+        styles={{
+          header: { background: '#1e3a5f', borderBottom: '2px solid #e6a800', padding: '16px 20px' },
+          body: { paddingTop: 24 },
+          footer: { borderTop: '1px solid #f0f4fb' },
+        }}
         footer={
           <Space style={{ float: 'right' }}>
             <Button onClick={() => { setDrawerOpen(false); form.resetFields(); }}>Cancel</Button>
