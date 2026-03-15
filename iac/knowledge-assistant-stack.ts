@@ -345,6 +345,7 @@ export class KnowledgeAssistantStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(60),
       environment: {
         TENANTS_TABLE: tenantsTable.tableName,
+        CHAT_TABLE: chatHistoryTable.tableName,
         USER_POOL_ID: userPool.userPoolId,
         DEFAULT_KNOWLEDGE_BASE_ID: knowledgeBase.knowledgeBaseId,
         DEFAULT_DATA_SOURCE_ID: docsDataSource.dataSourceId,
@@ -353,6 +354,7 @@ export class KnowledgeAssistantStack extends cdk.Stack {
       },
     });
     tenantsTable.grantReadWriteData(adminFn);
+    chatHistoryTable.grantReadWriteData(adminFn);
     docsBucket.grantReadWrite(adminFn);
     adminFn.addToRolePolicy(new iam.PolicyStatement({
       actions: [
@@ -364,7 +366,7 @@ export class KnowledgeAssistantStack extends cdk.Stack {
       resources: [userPool.userPoolArn],
     }));
     adminFn.addToRolePolicy(new iam.PolicyStatement({
-      actions: ['bedrock:CreateDataSource'],
+      actions: ['bedrock:CreateDataSource', 'bedrock:DeleteDataSource', 'bedrock:StartIngestionJob'],
       resources: [`arn:aws:bedrock:${this.region}:${this.account}:knowledge-base/${knowledgeBase.knowledgeBaseId}`],
     }));
 

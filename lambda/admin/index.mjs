@@ -1,7 +1,7 @@
-import { DynamoDBClient, ScanCommand, PutItemCommand, DeleteItemCommand, UpdateItemCommand } from '@aws-sdk/client-dynamodb';
+import { DynamoDBClient, ScanCommand, PutItemCommand, DeleteItemCommand, UpdateItemCommand, GetItemCommand } from '@aws-sdk/client-dynamodb';
 import { CognitoIdentityProviderClient, AdminCreateUserCommand, AdminAddUserToGroupCommand, AdminDeleteUserCommand, ListUsersCommand } from '@aws-sdk/client-cognito-identity-provider';
-import { BedrockAgentClient, CreateDataSourceCommand } from '@aws-sdk/client-bedrock-agent';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { BedrockAgentClient, CreateDataSourceCommand, DeleteDataSourceCommand, StartIngestionJobCommand } from '@aws-sdk/client-bedrock-agent';
+import { S3Client, PutObjectCommand, ListObjectsV2Command, DeleteObjectsCommand } from '@aws-sdk/client-s3';
 
 const dynamo      = new DynamoDBClient({});
 const cognito     = new CognitoIdentityProviderClient({});
@@ -9,6 +9,7 @@ const bedrockAgent = new BedrockAgentClient({});
 const s3          = new S3Client({});
 
 const TENANTS_TABLE            = process.env.TENANTS_TABLE;
+const CHAT_TABLE               = process.env.CHAT_TABLE;
 const USER_POOL_ID             = process.env.USER_POOL_ID;
 const DEFAULT_KNOWLEDGE_BASE_ID = process.env.DEFAULT_KNOWLEDGE_BASE_ID;
 const DEFAULT_DATA_SOURCE_ID   = process.env.DEFAULT_DATA_SOURCE_ID;
@@ -124,16 +125,6 @@ export const handler = async (event) => {
       return jsonResponse(400, { error: 'Failed to create tenant admin user', detail: err.message });
     }
 
-    // Create S3 folder placeholder
-    if (DOCS_BUCKET_NAME) {
-      try {
-        await s3.send(new PutObjectCommand({ Bucket: DOCS_BUCKET_NAME, Key: `${id}/`, Body: '' }));
-        console.log('Created S3 folder', `${id}/`);
-      } catch (err) {
-        console.error('S3 folder creation error (non-fatal):', err);
-      }
-    }
-
     // Provision per-tenant Bedrock data source
     let dataSourceId = DEFAULT_DATA_SOURCE_ID || '';
     if (DEFAULT_KNOWLEDGE_BASE_ID && DOCS_BUCKET_ARN) {
@@ -153,6 +144,7 @@ export const handler = async (event) => {
       }
     }
 
+    // Write DynamoDB record BEFORE creating S3 folder so sync Lambda finds the correct data source
     await dynamo.send(new PutItemCommand({
       TableName: TENANTS_TABLE,
       Item: {
@@ -164,6 +156,29 @@ export const handler = async (event) => {
         createdAt:      { S: new Date().toISOString() },
       },
     }));
+
+    // Create S3 folder placeholder (DynamoDB record already exists so sync Lambda uses correct data source)
+    if (DOCS_BUCKET_NAME) {
+      try {
+        await s3.send(new PutObjectCommand({ Bucket: DOCS_BUCKET_NAME, Key: `${id}/`, Body: '' }));
+        console.log('Created S3 folder', `${id}/`);
+      } catch (err) {
+        console.error('S3 folder creation error (non-fatal):', err);
+      }
+    }
+
+    // Start initial ingestion job so any existing S3 objects are indexed immediately
+    if (DEFAULT_KNOWLEDGE_BASE_ID && dataSourceId) {
+      try {
+        await bedrockAgent.send(new StartIngestionJobCommand({
+          knowledgeBaseId: DEFAULT_KNOWLEDGE_BASE_ID,
+          dataSourceId,
+        }));
+        console.log('Started initial ingestion job for tenant', id, 'dataSource', dataSourceId);
+      } catch (err) {
+        console.error('StartIngestionJob error (non-fatal):', err);
+      }
+    }
 
     return jsonResponse(200, { tenantId: id, name, adminEmail });
   }
@@ -185,13 +200,91 @@ export const handler = async (event) => {
 
   // ── DELETE /tenants/{tenantId} ────────────────────────────────────────────
   if (method === 'DELETE' && tenantIdParam) {
-    // Delete DynamoDB record
+    // Fetch tenant record first to get dataSourceId, knowledgeBaseId
+    let tenantItem;
+    try {
+      const getRes = await dynamo.send(new GetItemCommand({
+        TableName: TENANTS_TABLE,
+        Key: { tenantId: { S: tenantIdParam } },
+      }));
+      tenantItem = getRes.Item;
+    } catch (err) {
+      console.error('Error fetching tenant record:', err);
+    }
+    const kbId = tenantItem?.knowledgeBaseId?.S;
+    const dsId = tenantItem?.dataSourceId?.S;
+
+    // 1. Delete S3 objects under tenant prefix
+    if (DOCS_BUCKET_NAME) {
+      try {
+        let continuationToken;
+        do {
+          const listRes = await s3.send(new ListObjectsV2Command({
+            Bucket: DOCS_BUCKET_NAME,
+            Prefix: `${tenantIdParam}/`,
+            ContinuationToken: continuationToken,
+          }));
+          const objects = (listRes.Contents || []).map(o => ({ Key: o.Key }));
+          if (objects.length > 0) {
+            await s3.send(new DeleteObjectsCommand({
+              Bucket: DOCS_BUCKET_NAME,
+              Delete: { Objects: objects, Quiet: true },
+            }));
+            console.log('Deleted', objects.length, 'S3 objects for tenant', tenantIdParam);
+          }
+          continuationToken = listRes.IsTruncated ? listRes.NextContinuationToken : undefined;
+        } while (continuationToken);
+      } catch (err) {
+        console.error('Error deleting S3 objects (non-fatal):', err);
+      }
+    }
+
+    // 2. Delete Bedrock data source (skip if it's the shared default)
+    if (kbId && dsId && dsId !== DEFAULT_DATA_SOURCE_ID) {
+      try {
+        await bedrockAgent.send(new DeleteDataSourceCommand({
+          knowledgeBaseId: kbId,
+          dataSourceId: dsId,
+        }));
+        console.log('Deleted Bedrock data source', dsId, 'for tenant', tenantIdParam);
+      } catch (err) {
+        console.error('Error deleting Bedrock data source (non-fatal):', err);
+      }
+    }
+
+    // 3. Delete chat history from DynamoDB
+    if (CHAT_TABLE) {
+      try {
+        let lastKey;
+        do {
+          const scanRes = await dynamo.send(new ScanCommand({
+            TableName: CHAT_TABLE,
+            FilterExpression: 'begins_with(tenantUser, :prefix)',
+            ExpressionAttributeValues: { ':prefix': { S: `${tenantIdParam}#` } },
+            ExclusiveStartKey: lastKey,
+          }));
+          const items = scanRes.Items || [];
+          await Promise.all(items.map(item =>
+            dynamo.send(new DeleteItemCommand({
+              TableName: CHAT_TABLE,
+              Key: { tenantUser: item.tenantUser, timestamp: item.timestamp },
+            }))
+          ));
+          console.log('Deleted', items.length, 'chat history items for tenant', tenantIdParam);
+          lastKey = scanRes.LastEvaluatedKey;
+        } while (lastKey);
+      } catch (err) {
+        console.error('Error deleting chat history (non-fatal):', err);
+      }
+    }
+
+    // 4. Delete DynamoDB tenant record
     await dynamo.send(new DeleteItemCommand({
       TableName: TENANTS_TABLE,
       Key: { tenantId: { S: tenantIdParam } },
     }));
 
-    // Delete all Cognito users belonging to this tenant
+    // 5. Delete all Cognito users belonging to this tenant
     try {
       const list = await cognito.send(new ListUsersCommand({ UserPoolId: USER_POOL_ID, Limit: 60 }));
       const toDelete = (list.Users || []).filter(u =>

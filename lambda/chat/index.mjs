@@ -100,7 +100,8 @@ export const handler = async (event) => {
         context = (retrieveResponse.retrievalResults || [])
           .map((r) => r.content.text)
           .join('\n\n---\n\n');
-      } catch {
+      } catch (err) {
+        console.error('RAG retrieve error (tenant:', tenantId, 'kb:', knowledgeBaseId, 'prefix:', docsPrefix, '):', err);
         context = '';
       }
     }
