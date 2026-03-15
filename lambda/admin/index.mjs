@@ -36,12 +36,14 @@ function getGroupsFromClaims(event) {
   if (!raw) return [];
   if (Array.isArray(raw)) return raw;
   if (typeof raw === 'string') {
-    // JSON array string e.g. '["RootAdmin"]'
-    if (raw.startsWith('[')) {
+    // API GW passes Cognito groups as '[RootAdmin]' or '["RootAdmin"]' (bracket-wrapped)
+    if (raw.startsWith('[') && raw.endsWith(']')) {
+      // Try valid JSON first: '["RootAdmin"]'
       try { return JSON.parse(raw); } catch {}
+      // Non-JSON bracket format from API GW: '[RootAdmin, TenantAdmin]'
+      return raw.slice(1, -1).split(',').map(s => s.trim()).filter(Boolean);
     }
-    // AWS HTTP API passes array claims as comma-separated: 'RootAdmin,TenantAdmin'
-    // or space-separated depending on version; handle both
+    // Plain comma- or space-separated fallback: 'RootAdmin,TenantAdmin'
     return raw.split(/[\s,]+/).filter(Boolean);
   }
   return [];
