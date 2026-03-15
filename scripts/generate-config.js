@@ -19,7 +19,7 @@ if (!stack) {
 const regionMatch = stack.WebSocketUrl.match(/execute-api\.(.+?)\.amazonaws/);
 const region = regionMatch ? regionMatch[1] : process.env.AWS_REGION || 'us-east-1';
 
-const adminApiUrl = stack.AdminApiUrl || '';
+const adminApiUrl = (stack.AdminApiUrl || '').replace(/\/$/, '');
 
 const config = `// Auto-generated from cdk-outputs.json - do not edit manually
 export interface AppConfig {
