@@ -10,6 +10,7 @@ const dynamo = new DynamoDBClient({});
 const CHAT_TABLE = process.env.CHAT_TABLE;
 const TENANTS_TABLE = process.env.TENANTS_TABLE;
 const DEFAULT_KNOWLEDGE_BASE_ID = process.env.DEFAULT_KNOWLEDGE_BASE_ID;
+const DOCS_BUCKET_NAME = process.env.DOCS_BUCKET_NAME;
 const MODEL_PROVIDER = process.env.MODEL_PROVIDER || 'bedrock';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
 const HISTORY_LIMIT = 20;
@@ -22,16 +23,14 @@ const postToConnection = async (apiGw, connectionId, data) => {
 };
 
 async function getTenantKb(tenantId) {
-  if (!tenantId || tenantId === 'default') {
-    return { knowledgeBaseId: DEFAULT_KNOWLEDGE_BASE_ID };
-  }
-  if (!TENANTS_TABLE) return { knowledgeBaseId: DEFAULT_KNOWLEDGE_BASE_ID };
+  if (!TENANTS_TABLE) return { knowledgeBaseId: DEFAULT_KNOWLEDGE_BASE_ID, docsPrefix: null };
   const resp = await dynamo.send(new GetItemCommand({
     TableName: TENANTS_TABLE,
-    Key: { tenantId: { S: String(tenantId) } },
+    Key: { tenantId: { S: String(tenantId || 'default') } },
   }));
   return {
     knowledgeBaseId: resp.Item?.knowledgeBaseId?.S || DEFAULT_KNOWLEDGE_BASE_ID,
+    docsPrefix: resp.Item?.docsPrefix?.S || null,
   };
 }
 
@@ -80,14 +79,23 @@ export const handler = async (event) => {
   try {
     await saveMessage(tenantUser, 'user', prompt);
 
-    const { knowledgeBaseId } = await getTenantKb(tenantId);
+    const { knowledgeBaseId, docsPrefix } = await getTenantKb(tenantId);
     let context = '';
     if (knowledgeBaseId) {
       try {
+        const vectorSearchConfiguration = { numberOfResults: 5 };
+        if (docsPrefix && DOCS_BUCKET_NAME) {
+          vectorSearchConfiguration.filter = {
+            startsWith: {
+              key: 'x-amz-bedrock-kb-source-uri',
+              value: `s3://${DOCS_BUCKET_NAME}/${docsPrefix}`,
+            },
+          };
+        }
         const retrieveResponse = await bedrockAgentClient.send(new RetrieveCommand({
           knowledgeBaseId,
           retrievalQuery: { text: prompt },
-          retrievalConfiguration: { vectorSearchConfiguration: { numberOfResults: 5 } },
+          retrievalConfiguration: { vectorSearchConfiguration },
         }));
         context = (retrieveResponse.retrievalResults || [])
           .map((r) => r.content.text)

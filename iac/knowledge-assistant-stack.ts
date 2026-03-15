@@ -187,6 +187,7 @@ export class KnowledgeAssistantStack extends cdk.Stack {
         CONNECTIONS_TABLE: connectionsTable.tableName,
         TENANTS_TABLE: tenantsTable.tableName,
         DEFAULT_KNOWLEDGE_BASE_ID: knowledgeBase.knowledgeBaseId,
+        DOCS_BUCKET_NAME: docsBucket.bucketName,
         MODEL_PROVIDER: 'bedrock',
         MODEL_ID: 'eu.anthropic.claude-haiku-4-5-20251001-v1:0',
         CHAT_TABLE: chatHistoryTable.tableName,
