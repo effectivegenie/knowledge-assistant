@@ -183,8 +183,8 @@ export default function App() {
       <Layout style={{ height: '100vh' }}>
         {/* ── Header ── */}
         <Header style={{
-          height: 100,
-          lineHeight: '100px',
+          height: 140,
+          lineHeight: '140px',
           background: BLUE,
           display: 'flex',
           alignItems: 'center',
@@ -204,7 +204,7 @@ export default function App() {
             <img
               src="/genie-logo-final-2-no-text.png"
               alt="Knowledge Genie"
-              style={{ height: 88, objectFit: 'contain', display: 'block' }}
+              style={{ height: 128, objectFit: 'contain', display: 'block' }}
             />
             <span style={{ color: '#fff', fontSize: 20, fontWeight: 700, letterSpacing: '-0.01em' }}>
               Knowledge Genie
@@ -231,7 +231,7 @@ export default function App() {
           width={240}
           title={
             <Space size={10}>
-              <img src="/genie-logo-final-2-no-text.png" alt="" style={{ height: 36, objectFit: 'contain' }} />
+              <img src="/genie-logo-final-2-no-text.png" alt="" style={{ height: 54, objectFit: 'contain' }} />
               <span style={{ fontWeight: 700, fontSize: 16, color: '#fff' }}>Knowledge Genie</span>
             </Space>
           }
