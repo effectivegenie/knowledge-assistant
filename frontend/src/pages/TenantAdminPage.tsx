@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Table, Button, Form, Input, Drawer, Space, Typography, message, Tag, Popconfirm } from 'antd';
-import { PlusOutlined, UserOutlined, DeleteOutlined } from '@ant-design/icons';
+import { Table, Button, Form, Input, Drawer, Space, Typography, message, Tag, Popconfirm, Upload } from 'antd';
+import type { UploadProps } from 'antd';
+import { PlusOutlined, UserOutlined, DeleteOutlined, UploadOutlined, InboxOutlined } from '@ant-design/icons';
 import { useAuth } from '../auth/AuthContext';
 import { adminApiUrl } from '../config';
+
+const { Dragger } = Upload;
 
 const { Title, Text } = Typography;
 
@@ -25,6 +28,7 @@ export default function TenantAdminPage() {
   const [users, setUsers] = useState<TenantUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [uploadDrawerOpen, setUploadDrawerOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm();
 
@@ -91,6 +95,40 @@ export default function TenantAdminPage() {
     }
   };
 
+  const uploadProps: UploadProps = {
+    multiple: true,
+    customRequest: async ({ file, onSuccess, onError, onProgress }) => {
+      const f = file as File;
+      try {
+        const res = await fetch(`${adminApiUrl}/tenants/${encodeURIComponent(tenantId)}/upload-url`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+          body: JSON.stringify({ filename: f.name }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        const { url } = data;
+
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) onProgress?.({ percent: Math.round((e.loaded / e.total) * 100) });
+          };
+          xhr.onload = () => {
+            if (xhr.status === 200 || xhr.status === 204) { onSuccess?.(null); resolve(); }
+            else reject(new Error(`S3 upload failed: ${xhr.status}`));
+          };
+          xhr.onerror = () => reject(new Error('Network error'));
+          xhr.open('PUT', url);
+          xhr.setRequestHeader('Content-Type', f.type || 'application/octet-stream');
+          xhr.send(f);
+        });
+      } catch (e) {
+        onError?.(e as Error);
+      }
+    },
+  };
+
   const columns = [
     {
       title: 'Email',
@@ -143,9 +181,14 @@ export default function TenantAdminPage() {
             </Text>
           </Title>
         </Space>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setDrawerOpen(true)}>
-          Add user
-        </Button>
+        <Space>
+          <Button icon={<UploadOutlined />} onClick={() => setUploadDrawerOpen(true)}>
+            Upload documents
+          </Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => setDrawerOpen(true)}>
+            Add user
+          </Button>
+        </Space>
       </div>
 
       <Table
@@ -157,6 +200,30 @@ export default function TenantAdminPage() {
         style={{ width: '100%' }}
         bordered
       />
+
+      <Drawer
+        title={<span style={{ color: '#fff', fontWeight: 700 }}>Upload documents</span>}
+        placement="right"
+        open={uploadDrawerOpen}
+        onClose={() => setUploadDrawerOpen(false)}
+        width={420}
+        closeIcon={<span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 16 }}>✕</span>}
+        styles={{
+          header: { background: '#1e3a5f', borderBottom: '2px solid #e6a800', padding: '16px 20px' },
+          body: { paddingTop: 24 },
+        }}
+      >
+        <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+          Files will be uploaded to the <strong>{tenantId}</strong> knowledge base folder and indexed automatically.
+        </Text>
+        <Dragger {...uploadProps}>
+          <p className="ant-upload-drag-icon">
+            <InboxOutlined style={{ color: '#1e3a5f', fontSize: 48 }} />
+          </p>
+          <p className="ant-upload-text">Click or drag files to upload</p>
+          <p className="ant-upload-hint">Supports PDF, DOCX, TXT, MD, HTML and other text documents. Multiple files allowed.</p>
+        </Dragger>
+      </Drawer>
 
       <Drawer
         title={<span style={{ color: '#fff', fontWeight: 700 }}>Add user</span>}

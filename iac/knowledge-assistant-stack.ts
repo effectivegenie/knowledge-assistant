@@ -23,6 +23,12 @@ export class KnowledgeAssistantStack extends cdk.Stack {
     const docsBucket = new s3.Bucket(this, 'DocumentsBucket', {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
+      cors: [{
+        allowedMethods: [s3.HttpMethods.PUT],
+        allowedOrigins: ['*'],
+        allowedHeaders: ['*'],
+        maxAge: 3000,
+      }],
     });
 
     const frontendBucket = new s3.Bucket(this, 'FrontendBucket', {
@@ -384,6 +390,7 @@ export class KnowledgeAssistantStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(30),
       environment: {
         USER_POOL_ID: userPool.userPoolId,
+        DOCS_BUCKET_NAME: docsBucket.bucketName,
       },
     });
     tenantAdminFn.addToRolePolicy(new iam.PolicyStatement({
@@ -394,6 +401,7 @@ export class KnowledgeAssistantStack extends cdk.Stack {
       ],
       resources: [userPool.userPoolArn],
     }));
+    docsBucket.grantPut(tenantAdminFn);
 
     const jwtAuthorizer = new HttpJwtAuthorizer('JwtAuthorizer', `https://cognito-idp.${this.region}.amazonaws.com/${userPool.userPoolId}`, {
       jwtAudience: [userPoolClient.userPoolClientId],
@@ -433,6 +441,12 @@ export class KnowledgeAssistantStack extends cdk.Stack {
       path: '/tenants/{tenantId}/users/{username}',
       methods: [apigwv2.HttpMethod.DELETE],
       integration: new apigwv2integrations.HttpLambdaIntegration('TenantUserDeleteIntegration', tenantAdminFn),
+    });
+    httpApi.addRoutes({
+      path: '/tenants/{tenantId}/upload-url',
+      methods: [apigwv2.HttpMethod.POST],
+      integration: new apigwv2integrations.HttpLambdaIntegration('UploadUrlIntegration', tenantAdminFn),
+      authorizer: jwtAuthorizer,
     });
 
     // ==================== CloudFront ====================

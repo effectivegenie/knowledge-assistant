@@ -1,8 +1,12 @@
 import { CognitoIdentityProviderClient, ListUsersCommand, AdminCreateUserCommand, AdminDeleteUserCommand } from '@aws-sdk/client-cognito-identity-provider';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 const cognito = new CognitoIdentityProviderClient({});
+const s3 = new S3Client({});
 
-const USER_POOL_ID = process.env.USER_POOL_ID;
+const USER_POOL_ID      = process.env.USER_POOL_ID;
+const DOCS_BUCKET_NAME  = process.env.DOCS_BUCKET_NAME;
 
 function parseBody(event) {
   try { return event.body ? JSON.parse(event.body) : {}; } catch { return {}; }
@@ -44,6 +48,22 @@ export const handler = async (event) => {
 
   if (!tenantIdFromPath) return jsonResponse(404, { error: 'Not found' });
   if (!isRootAdmin && (!isTenantAdmin || userTenantId !== tenantIdFromPath)) return jsonResponse(403, { error: 'Forbidden' });
+
+  // ── POST /tenants/{tenantId}/upload-url ───────────────────────────────────
+  if (method === 'POST' && path.endsWith('/upload-url')) {
+    const { filename } = parseBody(event);
+    if (!filename) return jsonResponse(400, { error: 'Missing filename' });
+    if (!DOCS_BUCKET_NAME) return jsonResponse(500, { error: 'Upload not configured' });
+    const safeFilename = String(filename).replace(/[^a-zA-Z0-9._\-\s]/g, '_').trim();
+    const key = `${tenantIdFromPath}/${safeFilename}`;
+    try {
+      const url = await getSignedUrl(s3, new PutObjectCommand({ Bucket: DOCS_BUCKET_NAME, Key: key }), { expiresIn: 300 });
+      return jsonResponse(200, { url, key });
+    } catch (err) {
+      console.error('Presign error:', err);
+      return jsonResponse(500, { error: 'Failed to generate upload URL' });
+    }
+  }
 
   // ── GET /tenants/{tenantId}/users ─────────────────────────────────────────
   if (method === 'GET') {
