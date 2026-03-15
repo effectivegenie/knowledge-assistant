@@ -1,6 +1,6 @@
 import { DynamoDBClient, ScanCommand, PutItemCommand, DeleteItemCommand, UpdateItemCommand, GetItemCommand } from '@aws-sdk/client-dynamodb';
 import { CognitoIdentityProviderClient, AdminCreateUserCommand, AdminAddUserToGroupCommand, AdminDeleteUserCommand, ListUsersCommand } from '@aws-sdk/client-cognito-identity-provider';
-import { BedrockAgentClient, CreateDataSourceCommand, UpdateDataSourceCommand, DeleteDataSourceCommand, StartIngestionJobCommand } from '@aws-sdk/client-bedrock-agent';
+import { BedrockAgentClient, CreateDataSourceCommand, DeleteDataSourceCommand, StartIngestionJobCommand } from '@aws-sdk/client-bedrock-agent';
 import { S3Client, PutObjectCommand, ListObjectsV2Command, DeleteObjectsCommand } from '@aws-sdk/client-s3';
 
 const dynamo      = new DynamoDBClient({});
@@ -244,24 +244,15 @@ export const handler = async (event) => {
       // 2. Delete Bedrock data source (skip if it's the shared default)
       if (kbId && dsId && dsId !== DEFAULT_DATA_SOURCE_ID) {
         try {
-          // Set RETAIN so Bedrock doesn't attempt to delete vectors from the vector store
-          await bedrockAgent.send(new UpdateDataSourceCommand({
-            knowledgeBaseId: kbId,
-            dataSourceId: dsId,
-            name: `ds-${tenantIdParam}`,
-            dataSourceConfiguration: {
-              type: 'S3',
-              s3Configuration: { bucketArn: DOCS_BUCKET_ARN, inclusionPrefixes: [`${tenantIdParam}/`] },
-            },
-            dataDeletionPolicy: 'RETAIN',
-          }));
           await bedrockAgent.send(new DeleteDataSourceCommand({
             knowledgeBaseId: kbId,
             dataSourceId: dsId,
           }));
           console.log('Deleted Bedrock data source', dsId, 'for tenant', tenantIdParam);
         } catch (err) {
-          console.error('Error deleting Bedrock data source (non-fatal):', err.message);
+          // ConflictException: vector store deletion not permitted — data source is left orphaned
+          // but S3 objects and DynamoDB record are already removed so it causes no harm
+          console.error('Error deleting Bedrock data source (non-fatal, may need manual cleanup):', err.message);
         }
       }
 
