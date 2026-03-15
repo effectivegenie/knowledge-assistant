@@ -348,11 +348,18 @@ export class KnowledgeAssistantStack extends cdk.Stack {
         DEFAULT_KNOWLEDGE_BASE_ID: knowledgeBase.knowledgeBaseId,
         DEFAULT_DATA_SOURCE_ID: docsDataSource.dataSourceId,
         DOCS_BUCKET_ARN: docsBucket.bucketArn,
+        DOCS_BUCKET_NAME: docsBucket.bucketName,
       },
     });
     tenantsTable.grantReadWriteData(adminFn);
+    docsBucket.grantReadWrite(adminFn);
     adminFn.addToRolePolicy(new iam.PolicyStatement({
-      actions: ['cognito-idp:AdminCreateUser', 'cognito-idp:AdminAddUserToGroup', 'cognito-idp:ListUsers'],
+      actions: [
+        'cognito-idp:AdminCreateUser',
+        'cognito-idp:AdminAddUserToGroup',
+        'cognito-idp:AdminDeleteUser',
+        'cognito-idp:ListUsers',
+      ],
       resources: [userPool.userPoolArn],
     }));
     adminFn.addToRolePolicy(new iam.PolicyStatement({
@@ -370,7 +377,11 @@ export class KnowledgeAssistantStack extends cdk.Stack {
       },
     });
     tenantAdminFn.addToRolePolicy(new iam.PolicyStatement({
-      actions: ['cognito-idp:ListUsers', 'cognito-idp:AdminCreateUser'],
+      actions: [
+        'cognito-idp:ListUsers',
+        'cognito-idp:AdminCreateUser',
+        'cognito-idp:AdminDeleteUser',
+      ],
       resources: [userPool.userPoolArn],
     }));
 
@@ -381,7 +392,13 @@ export class KnowledgeAssistantStack extends cdk.Stack {
       apiName: 'KnowledgeAssistantAdmin',
       corsPreflight: {
         allowOrigins: ['*'],
-        allowMethods: [apigwv2.CorsHttpMethod.GET, apigwv2.CorsHttpMethod.POST, apigwv2.CorsHttpMethod.OPTIONS],
+        allowMethods: [
+          apigwv2.CorsHttpMethod.GET,
+          apigwv2.CorsHttpMethod.POST,
+          apigwv2.CorsHttpMethod.PUT,
+          apigwv2.CorsHttpMethod.DELETE,
+          apigwv2.CorsHttpMethod.OPTIONS,
+        ],
         allowHeaders: ['Content-Type', 'Authorization'],
       },
       defaultAuthorizer: jwtAuthorizer,
@@ -393,9 +410,19 @@ export class KnowledgeAssistantStack extends cdk.Stack {
       integration: new apigwv2integrations.HttpLambdaIntegration('AdminIntegration', adminFn),
     });
     httpApi.addRoutes({
+      path: '/tenants/{tenantId}',
+      methods: [apigwv2.HttpMethod.PUT, apigwv2.HttpMethod.DELETE],
+      integration: new apigwv2integrations.HttpLambdaIntegration('AdminTenantIntegration', adminFn),
+    });
+    httpApi.addRoutes({
       path: '/tenants/{tenantId}/users',
       methods: [apigwv2.HttpMethod.GET, apigwv2.HttpMethod.POST],
       integration: new apigwv2integrations.HttpLambdaIntegration('TenantAdminIntegration', tenantAdminFn),
+    });
+    httpApi.addRoutes({
+      path: '/tenants/{tenantId}/users/{username}',
+      methods: [apigwv2.HttpMethod.DELETE],
+      integration: new apigwv2integrations.HttpLambdaIntegration('TenantUserDeleteIntegration', tenantAdminFn),
     });
 
     // ==================== CloudFront ====================

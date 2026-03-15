@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Table, Button, Form, Input, Drawer, Space, Typography, message, Tag } from 'antd';
-import { PlusOutlined, UserOutlined } from '@ant-design/icons';
+import { Table, Button, Form, Input, Drawer, Space, Typography, message, Tag, Popconfirm } from 'antd';
+import { PlusOutlined, UserOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useAuth } from '../auth/AuthContext';
 import { adminApiUrl } from '../config';
 
@@ -74,6 +74,23 @@ export default function TenantAdminPage() {
     }
   };
 
+  const handleDelete = async (username: string) => {
+    try {
+      const res = await fetch(
+        `${adminApiUrl}/tenants/${encodeURIComponent(tenantId)}/users/${encodeURIComponent(username)}`,
+        { method: 'DELETE', headers: { Authorization: `Bearer ${idToken}` } },
+      );
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || res.statusText);
+      }
+      message.success(`User deleted`);
+      fetchUsers();
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : 'Failed to delete user');
+    }
+  };
+
   const columns = [
     {
       title: 'Email',
@@ -94,6 +111,23 @@ export default function TenantAdminPage() {
       dataIndex: 'createdAt',
       key: 'createdAt',
       render: (t: string) => t ? new Date(t).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—',
+    },
+    {
+      title: 'Actions',
+      key: 'actions',
+      width: 80,
+      render: (_: unknown, record: TenantUser) => (
+        <Popconfirm
+          title={`Delete user "${record.email || record.username}"?`}
+          description="The user will be permanently removed from Cognito."
+          onConfirm={() => handleDelete(record.username)}
+          okText="Delete"
+          okButtonProps={{ danger: true }}
+          cancelText="Cancel"
+        >
+          <Button type="text" icon={<DeleteOutlined />} danger />
+        </Popconfirm>
+      ),
     },
   ];
 
