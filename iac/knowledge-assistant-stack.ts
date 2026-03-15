@@ -163,6 +163,10 @@ export class KnowledgeAssistantStack extends cdk.Stack {
       s3.EventType.OBJECT_CREATED,
       new s3n.LambdaDestination(kbSyncFn),
     );
+    docsBucket.addEventNotification(
+      s3.EventType.OBJECT_REMOVED,
+      new s3n.LambdaDestination(kbSyncFn),
+    );
     kbSyncFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['bedrock:StartIngestionJob'],
       resources: [`arn:aws:bedrock:${this.region}:${this.account}:knowledge-base/*`],
