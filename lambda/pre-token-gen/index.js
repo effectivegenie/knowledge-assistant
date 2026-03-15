@@ -1,11 +1,12 @@
 /**
  * Pre token generation: add cognito:groups and custom:tenantId to ID token.
- * Cognito requires: do not replace event.response, only set claimsOverrideDetails.
+ * Supports both legacy (claimsOverrideDetails) and V2 (claimsAndScopeOverrideDetails) response formats.
  */
-export const handler = async (event) => {
+exports.handler = async (event) => {
   if (!event.response) {
     event.response = {};
   }
+
   const claimsToAddOrOverride = {};
   const groups = event.request?.groupConfiguration?.groupsToOverride;
   if (Array.isArray(groups) && groups.length > 0) {
@@ -15,8 +16,10 @@ export const handler = async (event) => {
   if (tenantId != null && tenantId !== '') {
     claimsToAddOrOverride['custom:tenantId'] = String(tenantId);
   }
+
   event.response.claimsOverrideDetails = {
     claimsToAddOrOverride,
   };
+
   return event;
 };
