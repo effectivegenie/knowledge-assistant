@@ -23,13 +23,15 @@ exports.handler = async (event) => {
 
   console.log('claimsToAddOrOverride', JSON.stringify(claimsToAddOrOverride));
 
+  const requestPlain = JSON.parse(JSON.stringify(event.request || {}));
+
   const result = {
     version: event.version,
     triggerSource: event.triggerSource,
     region: event.region,
     userPoolId: event.userPoolId,
     userName: event.userName,
-    request: event.request,
+    request: requestPlain,
     response: {
       claimsOverrideDetails: {
         claimsToAddOrOverride,
@@ -37,13 +39,8 @@ exports.handler = async (event) => {
     },
   };
 
-  try {
-    const serialized = JSON.stringify(result);
-    console.log('Return payload length', serialized.length);
-  } catch (e) {
-    console.error('JSON.stringify failed', e);
-    throw e;
-  }
+  const serialized = JSON.stringify(result);
+  console.log('Return payload length', serialized.length);
 
   return result;
 };

@@ -10,11 +10,19 @@ const { Header, Content } = Layout;
 const { Text } = Typography;
 
 // Brand colors from logo: gold/amber + deep blue
+const AUTH_BLUE = '#1e3a5f';
+const AUTH_BLUE_LIGHT = '#2c5282';
+const AUTH_BLUE_MUTED = '#475569';
+const AUTH_GOLD = '#c99200';
 const AUTH_THEME = {
   token: {
     colorPrimary: '#e6a800',
     colorPrimaryHover: '#f0b429',
     colorPrimaryActive: '#cc9200',
+    colorText: AUTH_BLUE,
+    colorTextSecondary: AUTH_BLUE_LIGHT,
+    colorTextTertiary: AUTH_BLUE_MUTED,
+    colorTextPlaceholder: AUTH_BLUE_MUTED,
   },
 };
 
@@ -61,13 +69,13 @@ function AuthPage() {
             <img
               src="/genie-logo-final-2.png"
               alt="Knowledge Genie"
-              style={{ width: 200, height: 200, objectFit: 'contain', marginBottom: 16 }}
+              style={{ width: 300, height: 300, objectFit: 'contain', marginBottom: 20 }}
             />
             <Typography.Title
               level={2}
               style={{
                 margin: 0,
-                color: '#1e3a5f',
+                color: AUTH_BLUE,
                 fontWeight: 700,
                 fontSize: 26,
                 letterSpacing: '-0.02em',
@@ -75,28 +83,41 @@ function AuthPage() {
             >
               Knowledge Genie
             </Typography.Title>
-            <Text style={{ color: '#64748b', fontSize: 15, marginTop: 4, display: 'block' }}>
+            <Text style={{ color: AUTH_GOLD, fontSize: 15, fontWeight: 500, marginTop: 6, display: 'block' }}>
               Sign in
             </Text>
           </div>
           <Form form={form} onFinish={handleSignIn} layout="vertical">
             <Form.Item
               name="email"
+              label={<span style={{ color: AUTH_BLUE }}>Email</span>}
               rules={[
                 { required: true, message: 'Please enter your email' },
                 { type: 'email', message: 'Please enter a valid email' },
               ]}
             >
-              <Input prefix={<MailOutlined />} size="large" placeholder="Email" />
+              <Input prefix={<MailOutlined style={{ color: AUTH_BLUE_MUTED }} />} size="large" placeholder="Email" />
             </Form.Item>
             <Form.Item
               name="password"
+              label={<span style={{ color: AUTH_BLUE }}>Password</span>}
               rules={[{ required: true, message: 'Please enter your password' }]}
             >
-              <Input.Password prefix={<LockOutlined />} size="large" placeholder="Password" />
+              <Input.Password prefix={<LockOutlined style={{ color: AUTH_BLUE_MUTED }} />} size="large" placeholder="Password" />
             </Form.Item>
             <Form.Item style={{ marginBottom: 0 }}>
-              <Button type="primary" htmlType="submit" block size="large" loading={loading}>
+              <Button
+                htmlType="submit"
+                block
+                size="large"
+                loading={loading}
+                style={{
+                  background: '#fff',
+                  color: AUTH_BLUE,
+                  borderColor: AUTH_BLUE_MUTED,
+                  fontWeight: 600,
+                }}
+              >
                 Sign In
               </Button>
             </Form.Item>
