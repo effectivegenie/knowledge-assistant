@@ -1,20 +1,22 @@
 /**
- * Pre token generation: add cognito:groups and custom:tenantId to ID token
- * so the frontend and API Gateway JWT authorizer can use them.
+ * Pre token generation: add cognito:groups and custom:tenantId to ID token.
+ * Cognito requires: do not replace event.response, only set claimsOverrideDetails.
  */
 export const handler = async (event) => {
-  if (!event.response.claimsOverrideDetails) {
-    event.response.claimsOverrideDetails = {};
+  if (!event.response) {
+    event.response = {};
   }
-  const details = event.response.claimsOverrideDetails;
-  if (!details.claimsToAddOrOverride) details.claimsToAddOrOverride = {};
+  const claimsToAddOrOverride = {};
   const groups = event.request?.groupConfiguration?.groupsToOverride;
-  if (groups && groups.length) {
-    details.claimsToAddOrOverride['cognito:groups'] = groups;
+  if (Array.isArray(groups) && groups.length > 0) {
+    claimsToAddOrOverride['cognito:groups'] = groups.map(String);
   }
   const tenantId = event.request?.userAttributes?.['custom:tenantId'];
-  if (tenantId) {
-    details.claimsToAddOrOverride['custom:tenantId'] = tenantId;
+  if (tenantId != null && tenantId !== '') {
+    claimsToAddOrOverride['custom:tenantId'] = String(tenantId);
   }
+  event.response.claimsOverrideDetails = {
+    claimsToAddOrOverride,
+  };
   return event;
 };
