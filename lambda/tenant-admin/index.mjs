@@ -34,6 +34,7 @@ export const handler = async (event) => {
   const groups        = parseGroups(claims['cognito:groups']);
   const userTenantId  = claims['custom:tenantId'] || '';
   const isTenantAdmin = groups.includes('TenantAdmin');
+  const isRootAdmin   = groups.includes('RootAdmin');
 
   const path       = event.requestContext?.http?.path || event.path || '';
   const method     = event.requestContext?.http?.method || event.httpMethod || '';
@@ -42,7 +43,7 @@ export const handler = async (event) => {
   const tenantIdFromPath = pathParams.tenantId || path.match(/^\/tenants\/([^/]+)\/users/)?.[1] || null;
 
   if (!tenantIdFromPath) return jsonResponse(404, { error: 'Not found' });
-  if (!isTenantAdmin || userTenantId !== tenantIdFromPath) return jsonResponse(403, { error: 'Forbidden' });
+  if (!isRootAdmin && (!isTenantAdmin || userTenantId !== tenantIdFromPath)) return jsonResponse(403, { error: 'Forbidden' });
 
   // ── GET /tenants/{tenantId}/users ─────────────────────────────────────────
   if (method === 'GET') {
