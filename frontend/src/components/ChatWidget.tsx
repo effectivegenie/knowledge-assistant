@@ -1,11 +1,6 @@
 import { useRef, useEffect, useState, useCallback, KeyboardEvent } from 'react';
 import { Avatar, Button, Input, Typography } from 'antd';
-import {
-  SendOutlined,
-  UserOutlined,
-  RobotOutlined,
-  DeleteOutlined,
-} from '@ant-design/icons';
+import { SendOutlined, UserOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useWebSocket } from '../hooks/useWebSocket';
 
 const { Text, Title } = Typography;
@@ -74,8 +69,10 @@ export default function ChatWidget() {
               gap: 16,
             }}
           >
-            <RobotOutlined
-              style={{ fontSize: 64, color: '#d9d9d9' }}
+            <img
+              src="/genie-logo-final-2-no-text.png"
+              alt="Knowledge Genie"
+              style={{ width: 72, height: 72, objectFit: 'contain', opacity: 0.9 }}
             />
             <Title
               level={4}
@@ -102,10 +99,10 @@ export default function ChatWidget() {
               {msg.role === 'assistant' && (
                 <Avatar
                   size="small"
-                  icon={<RobotOutlined />}
+                  src="/genie-logo-final-2-no-text.png"
+                  alt="Knowledge Genie"
                   style={{
                     backgroundColor: '#f5f5f5',
-                    color: 'rgba(0, 0, 0, 0.45)',
                     flexShrink: 0,
                     marginTop: 4,
                   }}

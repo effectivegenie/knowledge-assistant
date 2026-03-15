@@ -1,25 +1,6 @@
 import { useState } from 'react';
-import {
-  Layout,
-  Card,
-  Form,
-  Input,
-  Button,
-  Spin,
-  Typography,
-  Space,
-  Menu,
-  message,
-} from 'antd';
-import {
-  RobotOutlined,
-  MailOutlined,
-  LockOutlined,
-  LogoutOutlined,
-  TeamOutlined,
-  UserOutlined,
-  MessageOutlined,
-} from '@ant-design/icons';
+import { Layout, Card, Form, Input, Button, Spin, Typography, Space, Menu, message } from 'antd';
+import { MailOutlined, LockOutlined, LogoutOutlined, TeamOutlined, UserOutlined, MessageOutlined } from '@ant-design/icons';
 import { useAuth } from './auth/AuthContext';
 import ChatWidget from './components/ChatWidget';
 import AdminPage from './pages/AdminPage';
@@ -65,11 +46,15 @@ function AuthPage() {
         }}
       >
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
-          <RobotOutlined style={{ fontSize: 36, color: '#1677ff', marginBottom: 8 }} />
+          <img
+            src="/genie-logo-final-2.png"
+            alt="Knowledge Genie"
+            style={{ width: 80, height: 80, objectFit: 'contain', marginBottom: 8 }}
+          />
           <Typography.Title level={3} style={{ margin: 0 }}>
-            Knowledge Assistant
+            Knowledge Genie
           </Typography.Title>
-          <Text type="secondary">Sign in (no self-registration)</Text>
+          <Text type="secondary">Sign in</Text>
         </div>
         <Form form={form} onFinish={handleSignIn} layout="vertical">
           <Form.Item
@@ -134,8 +119,12 @@ export default function App() {
         }}
       >
         <Space>
-          <RobotOutlined style={{ fontSize: 22, color: '#1677ff' }} />
-          <span style={{ fontSize: 18, fontWeight: 600 }}>Knowledge Assistant</span>
+          <img
+            src="/genie-logo-final-2-no-text.png"
+            alt="Knowledge Genie"
+            style={{ width: 28, height: 28, objectFit: 'contain', borderRadius: 6 }}
+          />
+          <span style={{ fontSize: 18, fontWeight: 600 }}>Knowledge Genie</span>
           <Menu
             mode="horizontal"
             selectedKeys={[view]}
