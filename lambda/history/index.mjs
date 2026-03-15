@@ -15,15 +15,18 @@ export const handler = async (event) => {
   let body = {};
   try { body = JSON.parse(event.body || '{}'); } catch {}
   const user = body.user;
+  const tenantId = body.tenantId || 'default';
   if (!user) return { statusCode: 400, body: 'Missing user' };
+
+  const tenantUser = `${tenantId}#${user}`;
 
   if (body.action === 'history') {
     const resp = await db.send(new QueryCommand({
       TableName: CHAT_TABLE,
-      KeyConditionExpression: 'userName = :u',
+      KeyConditionExpression: 'tenantUser = :u',
       FilterExpression: 'isDeleted = :d',
       ExpressionAttributeValues: {
-        ':u': { S: user },
+        ':u': { S: tenantUser },
         ':d': { N: '0' },
       },
       ScanIndexForward: false,
@@ -47,10 +50,10 @@ export const handler = async (event) => {
   if (body.action === 'clear_history') {
     const resp = await db.send(new QueryCommand({
       TableName: CHAT_TABLE,
-      KeyConditionExpression: 'userName = :u',
+      KeyConditionExpression: 'tenantUser = :u',
       FilterExpression: 'isDeleted = :d',
       ExpressionAttributeValues: {
-        ':u': { S: user },
+        ':u': { S: tenantUser },
         ':d': { N: '0' },
       },
       ScanIndexForward: false,
@@ -62,7 +65,7 @@ export const handler = async (event) => {
       await Promise.all(items.map(item =>
         db.send(new UpdateItemCommand({
           TableName: CHAT_TABLE,
-          Key: { userName: item.userName, timestamp: item.timestamp },
+          Key: { tenantUser: item.tenantUser, timestamp: item.timestamp },
           UpdateExpression: 'SET isDeleted = :d',
           ExpressionAttributeValues: { ':d': { N: '1' } },
         }))

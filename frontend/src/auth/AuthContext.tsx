@@ -17,6 +17,8 @@ import {
 interface User {
   email: string;
   sub: string;
+  tenantId: string;
+  groups: string[];
 }
 
 interface AuthContextType {
@@ -24,6 +26,8 @@ interface AuthContextType {
   idToken: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  isRootAdmin: boolean;
+  isTenantAdmin: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   confirmSignUp: (email: string, code: string) => Promise<void>;
@@ -32,9 +36,15 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-function parseIdToken(token: string): { email: string; sub: string } {
+function parseIdToken(token: string): { email: string; sub: string; tenantId: string; groups: string[] } {
   const payload = JSON.parse(atob(token.split('.')[1]));
-  return { email: payload.email, sub: payload.sub };
+  const groups = payload['cognito:groups'];
+  return {
+    email: payload.email,
+    sub: payload.sub,
+    tenantId: payload['custom:tenantId'] || 'default',
+    groups: Array.isArray(groups) ? groups : groups ? [groups] : [],
+  };
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -81,6 +91,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     idToken,
     isLoading,
     isAuthenticated: !!user,
+    isRootAdmin: !!user?.groups?.includes('RootAdmin'),
+    isTenantAdmin: !!user?.groups?.includes('TenantAdmin'),
     signIn,
     signUp,
     confirmSignUp,

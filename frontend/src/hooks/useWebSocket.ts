@@ -27,6 +27,7 @@ export function useWebSocket() {
   const reconnectDelayRef = useRef(1000);
 
   const userEmail = user?.email ?? '';
+  const tenantId = user?.tenantId ?? 'default';
 
   useEffect(() => {
     if (!idToken) {
@@ -50,7 +51,7 @@ export function useWebSocket() {
         reconnectDelayRef.current = 1000;
 
         if (userEmail) {
-          ws.send(JSON.stringify({ action: 'history', user: userEmail }));
+          ws.send(JSON.stringify({ action: 'history', user: userEmail, tenantId }));
         }
       };
 
@@ -138,7 +139,7 @@ export function useWebSocket() {
         clearTimeout(reconnectTimeoutRef.current);
       }
     };
-  }, [idToken, userEmail]);
+  }, [idToken, userEmail, tenantId]);
 
   const sendMessage = useCallback(
     (prompt: string) => {
@@ -160,20 +161,20 @@ export function useWebSocket() {
       setMessages((prev) => [...prev, userMsg, assistantMsg]);
 
       wsRef.current.send(
-        JSON.stringify({ action: 'sendMessage', user: userEmail, text: prompt }),
+        JSON.stringify({ action: 'sendMessage', user: userEmail, tenantId, text: prompt }),
       );
     },
-    [userEmail],
+    [userEmail, tenantId],
   );
 
   const clearMessages = useCallback(() => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && userEmail) {
       wsRef.current.send(
-        JSON.stringify({ action: 'clear_history', user: userEmail }),
+        JSON.stringify({ action: 'clear_history', user: userEmail, tenantId }),
       );
     }
     setMessages([]);
-  }, [userEmail]);
+  }, [userEmail, tenantId]);
 
   return { messages, isConnected, sendMessage, clearMessages, historyLoaded };
 }

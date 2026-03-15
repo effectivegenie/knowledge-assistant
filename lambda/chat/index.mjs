@@ -1,13 +1,15 @@
 import { BedrockAgentRuntimeClient, RetrieveCommand } from '@aws-sdk/client-bedrock-agent-runtime';
 import { BedrockRuntimeClient, InvokeModelWithResponseStreamCommand } from '@aws-sdk/client-bedrock-runtime';
 import { ApiGatewayManagementApiClient, PostToConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
-import { DynamoDBClient, PutItemCommand, QueryCommand } from '@aws-sdk/client-dynamodb';
+import { DynamoDBClient, PutItemCommand, QueryCommand, GetItemCommand } from '@aws-sdk/client-dynamodb';
 
 const bedrockAgentClient = new BedrockAgentRuntimeClient({});
 const bedrockClient = new BedrockRuntimeClient({});
 const dynamo = new DynamoDBClient({});
 
 const CHAT_TABLE = process.env.CHAT_TABLE;
+const TENANTS_TABLE = process.env.TENANTS_TABLE;
+const DEFAULT_KNOWLEDGE_BASE_ID = process.env.DEFAULT_KNOWLEDGE_BASE_ID;
 const MODEL_PROVIDER = process.env.MODEL_PROVIDER || 'bedrock';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
 const HISTORY_LIMIT = 20;
@@ -19,11 +21,25 @@ const postToConnection = async (apiGw, connectionId, data) => {
   }));
 };
 
-async function saveMessage(user, role, text) {
+async function getTenantKb(tenantId) {
+  if (!tenantId || tenantId === 'default') {
+    return { knowledgeBaseId: DEFAULT_KNOWLEDGE_BASE_ID };
+  }
+  if (!TENANTS_TABLE) return { knowledgeBaseId: DEFAULT_KNOWLEDGE_BASE_ID };
+  const resp = await dynamo.send(new GetItemCommand({
+    TableName: TENANTS_TABLE,
+    Key: { tenantId: { S: String(tenantId) } },
+  }));
+  return {
+    knowledgeBaseId: resp.Item?.knowledgeBaseId?.S || DEFAULT_KNOWLEDGE_BASE_ID,
+  };
+}
+
+async function saveMessage(tenantUser, role, text) {
   await dynamo.send(new PutItemCommand({
     TableName: CHAT_TABLE,
     Item: {
-      userName: { S: String(user) },
+      tenantUser: { S: String(tenantUser) },
       timestamp: { S: new Date().toISOString() },
       role: { S: role },
       text: { S: text ?? '' },
@@ -32,13 +48,13 @@ async function saveMessage(user, role, text) {
   }));
 }
 
-async function getHistory(user) {
+async function getHistory(tenantUser) {
   const result = await dynamo.send(new QueryCommand({
     TableName: CHAT_TABLE,
-    KeyConditionExpression: 'userName = :u',
+    KeyConditionExpression: 'tenantUser = :u',
     FilterExpression: 'isDeleted = :d',
     ExpressionAttributeValues: {
-      ':u': { S: String(user) },
+      ':u': { S: String(tenantUser) },
       ':d': { N: '0' },
     },
     ScanIndexForward: false,
@@ -55,28 +71,33 @@ export const handler = async (event) => {
   const body = JSON.parse(event.body || '{}');
   const prompt = body.text || body.data?.prompt;
   const user = body.user || 'anonymous';
+  const tenantId = body.tenantId || 'default';
+  const tenantUser = `${tenantId}#${user}`;
   const connectionId = event.requestContext.connectionId;
   const endpoint = `https://${event.requestContext.domainName}/${event.requestContext.stage}`;
   const apiGw = new ApiGatewayManagementApiClient({ endpoint });
 
   try {
-    await saveMessage(user, 'user', prompt);
+    await saveMessage(tenantUser, 'user', prompt);
 
+    const { knowledgeBaseId } = await getTenantKb(tenantId);
     let context = '';
-    try {
-      const retrieveResponse = await bedrockAgentClient.send(new RetrieveCommand({
-        knowledgeBaseId: process.env.KNOWLEDGE_BASE_ID,
-        retrievalQuery: { text: prompt },
-        retrievalConfiguration: { vectorSearchConfiguration: { numberOfResults: 5 } },
-      }));
-      context = (retrieveResponse.retrievalResults || [])
-        .map((r) => r.content.text)
-        .join('\n\n---\n\n');
-    } catch {
-      context = '';
+    if (knowledgeBaseId) {
+      try {
+        const retrieveResponse = await bedrockAgentClient.send(new RetrieveCommand({
+          knowledgeBaseId,
+          retrievalQuery: { text: prompt },
+          retrievalConfiguration: { vectorSearchConfiguration: { numberOfResults: 5 } },
+        }));
+        context = (retrieveResponse.retrievalResults || [])
+          .map((r) => r.content.text)
+          .join('\n\n---\n\n');
+      } catch {
+        context = '';
+      }
     }
 
-    const history = await getHistory(user);
+    const history = await getHistory(tenantUser);
 
     const systemMessage = context
       ? `You are a helpful knowledge base assistant. Use the following context to answer questions.\n\nContext:\n${context}\n\nIf the context doesn't contain relevant information, say so. Write in the same language as the user's question.`
@@ -152,7 +173,7 @@ export const handler = async (event) => {
     }
 
     if (assistantMessage.trim()) {
-      await saveMessage(user, 'ai', assistantMessage);
+      await saveMessage(tenantUser, 'ai', assistantMessage);
     }
 
     await postToConnection(apiGw, connectionId, { type: 'end' });

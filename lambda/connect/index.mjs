@@ -35,12 +35,17 @@ export const handler = async (event) => {
     return { statusCode: 401, body: 'Unauthorized' };
   }
 
+  const tenantId = payload['custom:tenantId'] || 'default';
+  const groups = payload['cognito:groups'] || [];
+
   await ddb.send(new PutCommand({
     TableName: process.env.CONNECTIONS_TABLE,
     Item: {
       connectionId: event.requestContext.connectionId,
       userId: payload.sub,
       email: payload.email || 'unknown',
+      tenantId,
+      groups,
       connectedAt: new Date().toISOString(),
     },
   }));

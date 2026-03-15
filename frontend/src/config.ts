@@ -8,4 +8,5 @@ export const config = {
   websocket: {
     url: 'REPLACE_AFTER_CDK_DEPLOY',
   },
+  adminApiUrl: 'REPLACE_AFTER_CDK_DEPLOY', // Admin REST API base URL (e.g. https://xxx.execute-api.region.amazonaws.com)
 };

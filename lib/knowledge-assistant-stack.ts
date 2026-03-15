@@ -8,6 +8,8 @@ import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as apigwv2 from 'aws-cdk-lib/aws-apigatewayv2';
+import * as apigwv2integrations from 'aws-cdk-lib/aws-apigatewayv2-integrations';
+import { HttpJwtAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import { bedrock, s3vectors } from '@cdklabs/generative-ai-cdk-constructs';
 import { Construct } from 'constructs';
 import * as path from 'path';
@@ -31,12 +33,22 @@ export class KnowledgeAssistantStack extends cdk.Stack {
 
     // ==================== Auth ====================
 
+    const preTokenGenFn = new lambda.Function(this, 'PreTokenGenFunction', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: 'index.handler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/pre-token-gen')),
+      timeout: cdk.Duration.seconds(5),
+    });
+
     const userPool = new cognito.UserPool(this, 'UserPool', {
-      selfSignUpEnabled: true,
+      selfSignUpEnabled: false,
       signInAliases: { email: true },
       autoVerify: { email: true },
       standardAttributes: {
         email: { required: true, mutable: true },
+      },
+      customAttributes: {
+        tenantId: new cognito.StringAttribute({ minLen: 1, maxLen: 128, mutable: true }),
       },
       passwordPolicy: {
         minLength: 8,
@@ -45,11 +57,33 @@ export class KnowledgeAssistantStack extends cdk.Stack {
         requireDigits: true,
         requireSymbols: false,
       },
+      lambdaTriggers: {
+        preTokenGeneration: preTokenGenFn,
+      },
       removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+    preTokenGenFn.addPermission('CognitoInvoke', {
+      principal: new iam.ServicePrincipal('cognito-idp.amazonaws.com'),
+      sourceArn: userPool.userPoolArn,
+    });
+
+    const rootAdminGroup = new cognito.CfnUserPoolGroup(this, 'RootAdminGroup', {
+      userPoolId: userPool.userPoolId,
+      groupName: 'RootAdmin',
+      description: 'Global admin; can create tenants',
+    });
+
+    const tenantAdminGroup = new cognito.CfnUserPoolGroup(this, 'TenantAdminGroup', {
+      userPoolId: userPool.userPoolId,
+      groupName: 'TenantAdmin',
+      description: 'Tenant admin; can manage users in their tenant',
     });
 
     const userPoolClient = userPool.addClient('WebClient', {
       authFlows: { userSrp: true },
+      generateSecret: false,
+      accessTokenValidity: cdk.Duration.hours(1),
+      idTokenValidity: cdk.Duration.hours(1),
     });
 
     // ==================== Knowledge Base ====================
@@ -84,10 +118,16 @@ export class KnowledgeAssistantStack extends cdk.Stack {
     });
 
     const chatHistoryTable = new dynamodb.Table(this, 'ChatHistoryTable', {
-      partitionKey: { name: 'userName', type: dynamodb.AttributeType.STRING },
+      partitionKey: { name: 'tenantUser', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'timestamp', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       timeToLiveAttribute: 'ttl',
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    const tenantsTable = new dynamodb.Table(this, 'TenantsTable', {
+      partitionKey: { name: 'tenantId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
@@ -100,19 +140,19 @@ export class KnowledgeAssistantStack extends cdk.Stack {
       timeout: cdk.Duration.minutes(1),
       memorySize: 256,
       environment: {
-        KNOWLEDGE_BASE_ID: knowledgeBase.knowledgeBaseId,
-        DATA_SOURCE_ID: docsDataSource.dataSourceId,
+        TENANTS_TABLE: tenantsTable.tableName,
+        DEFAULT_KNOWLEDGE_BASE_ID: knowledgeBase.knowledgeBaseId,
+        DEFAULT_DATA_SOURCE_ID: docsDataSource.dataSourceId,
       },
     });
-
+    tenantsTable.grantReadData(kbSyncFn);
     docsBucket.addEventNotification(
       s3.EventType.OBJECT_CREATED,
       new s3n.LambdaDestination(kbSyncFn),
     );
-
     kbSyncFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['bedrock:StartIngestionJob'],
-      resources: [`arn:aws:bedrock:${this.region}:${this.account}:knowledge-base/${knowledgeBase.knowledgeBaseId}`],
+      resources: [`arn:aws:bedrock:${this.region}:${this.account}:knowledge-base/*`],
     }));
 
     const connectFn = new lambda.Function(this, 'ConnectFunction', {
@@ -145,21 +185,25 @@ export class KnowledgeAssistantStack extends cdk.Stack {
       memorySize: 1024,
       environment: {
         CONNECTIONS_TABLE: connectionsTable.tableName,
-        KNOWLEDGE_BASE_ID: knowledgeBase.knowledgeBaseId,
+        TENANTS_TABLE: tenantsTable.tableName,
+        DEFAULT_KNOWLEDGE_BASE_ID: knowledgeBase.knowledgeBaseId,
         MODEL_PROVIDER: 'bedrock',
-        // Use the EU cross-region inference profile ID for Claude Haiku 4.5.
-        // This is the ID Bedrock expects as modelId when invoking the profile.
         MODEL_ID: 'eu.anthropic.claude-haiku-4-5-20251001-v1:0',
         CHAT_TABLE: chatHistoryTable.tableName,
       },
     });
     connectionsTable.grantReadWriteData(chatFn);
     chatHistoryTable.grantReadWriteData(chatFn);
+    tenantsTable.grantReadData(chatFn);
     chatFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModelWithResponseStream', 'bedrock:InvokeModel'],
       resources: [
         `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/eu.anthropic.claude-haiku-4-5-20251001-v1:0`,
       ],
+    }));
+    chatFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['bedrock:Retrieve'],
+      resources: [`arn:aws:bedrock:${this.region}:${this.account}:knowledge-base/*`],
     }));
 
     const historyFn = new lambda.Function(this, 'HistoryFunction', {
@@ -172,11 +216,6 @@ export class KnowledgeAssistantStack extends cdk.Stack {
       },
     });
     chatHistoryTable.grantReadWriteData(historyFn);
-
-    chatFn.addToRolePolicy(new iam.PolicyStatement({
-      actions: ['bedrock:Retrieve'],
-      resources: [`arn:aws:bedrock:${this.region}:${this.account}:knowledge-base/${knowledgeBase.knowledgeBaseId}`],
-    }));
     chatFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModelWithResponseStream', 'bedrock:InvokeModel'],
       resources: [
@@ -296,6 +335,64 @@ export class KnowledgeAssistantStack extends cdk.Stack {
       resources: [`arn:aws:execute-api:${this.region}:${this.account}:${wsApi.ref}/prod/*`],
     }));
 
+    // ==================== Admin API (REST) ====================
+
+    const adminFn = new lambda.Function(this, 'AdminFunction', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: 'index.handler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/admin')),
+      timeout: cdk.Duration.seconds(30),
+      environment: {
+        TENANTS_TABLE: tenantsTable.tableName,
+        USER_POOL_ID: userPool.userPoolId,
+        DEFAULT_KNOWLEDGE_BASE_ID: knowledgeBase.knowledgeBaseId,
+        DEFAULT_DATA_SOURCE_ID: docsDataSource.dataSourceId,
+      },
+    });
+    tenantsTable.grantReadWriteData(adminFn);
+    adminFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['cognito-idp:AdminCreateUser', 'cognito-idp:AdminAddUserToGroup', 'cognito-idp:ListUsers'],
+      resources: [userPool.userPoolArn],
+    }));
+
+    const tenantAdminFn = new lambda.Function(this, 'TenantAdminFunction', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: 'index.handler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/tenant-admin')),
+      timeout: cdk.Duration.seconds(30),
+      environment: {
+        USER_POOL_ID: userPool.userPoolId,
+      },
+    });
+    tenantAdminFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['cognito-idp:ListUsers', 'cognito-idp:AdminCreateUser'],
+      resources: [userPool.userPoolArn],
+    }));
+
+    const jwtAuthorizer = new HttpJwtAuthorizer('JwtAuthorizer', `https://cognito-idp.${this.region}.amazonaws.com/${userPool.userPoolId}`, {
+      jwtAudience: [userPoolClient.userPoolClientId],
+    });
+    const httpApi = new apigwv2.HttpApi(this, 'AdminHttpApi', {
+      apiName: 'KnowledgeAssistantAdmin',
+      corsPreflight: {
+        allowOrigins: ['*'],
+        allowMethods: [apigwv2.CorsHttpMethod.GET, apigwv2.CorsHttpMethod.POST, apigwv2.CorsHttpMethod.OPTIONS],
+        allowHeaders: ['Content-Type', 'Authorization'],
+      },
+      defaultAuthorizer: jwtAuthorizer,
+    });
+
+    httpApi.addRoutes({
+      path: '/tenants',
+      methods: [apigwv2.HttpMethod.GET, apigwv2.HttpMethod.POST],
+      integration: new apigwv2integrations.HttpLambdaIntegration('AdminIntegration', adminFn),
+    });
+    httpApi.addRoutes({
+      path: '/tenants/{tenantId}/users',
+      methods: [apigwv2.HttpMethod.GET, apigwv2.HttpMethod.POST],
+      integration: new apigwv2integrations.HttpLambdaIntegration('TenantAdminIntegration', tenantAdminFn),
+    });
+
     // ==================== CloudFront ====================
 
     const distribution = new cloudfront.Distribution(this, 'FrontendDistribution', {
@@ -321,5 +418,6 @@ export class KnowledgeAssistantStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'FrontendBucketName', { value: frontendBucket.bucketName });
     new cdk.CfnOutput(this, 'DistributionId', { value: distribution.distributionId });
     new cdk.CfnOutput(this, 'KnowledgeBaseId', { value: knowledgeBase.knowledgeBaseId });
+    new cdk.CfnOutput(this, 'AdminApiUrl', { value: httpApi.url ?? '', description: 'Admin REST API URL (add /tenants)' });
   }
 }
