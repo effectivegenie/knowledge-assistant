@@ -106,18 +106,7 @@ function AuthPage() {
               <Input.Password prefix={<LockOutlined style={{ color: AUTH_BLUE_MUTED }} />} size="large" placeholder="Password" />
             </Form.Item>
             <Form.Item style={{ marginBottom: 0 }}>
-              <Button
-                htmlType="submit"
-                block
-                size="large"
-                loading={loading}
-                style={{
-                  background: '#fff',
-                  color: AUTH_BLUE,
-                  borderColor: AUTH_BLUE_MUTED,
-                  fontWeight: 600,
-                }}
-              >
+              <Button type="primary" htmlType="submit" block size="large" loading={loading}>
                 Sign In
               </Button>
             </Form.Item>

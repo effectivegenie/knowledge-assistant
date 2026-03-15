@@ -1,14 +1,12 @@
 /**
  * Pre token generation: add cognito:groups and custom:tenantId to ID token.
- * Return a plain object so Cognito gets a clean JSON response (no prototype/getters).
+ * Supports both legacy (claimsOverrideDetails) and V2 (claimsAndScopeOverrideDetails).
+ * Uses callback to maximize Cognito compatibility.
  */
-exports.handler = async (event) => {
+exports.handler = (event, context, callback) => {
   console.log('PreTokenGen invoked', {
     triggerSource: event.triggerSource,
     version: event.version,
-    userName: event.userName,
-    hasGroupConfig: !!event.request?.groupConfiguration,
-    hasUserAttributes: !!event.request?.userAttributes,
   });
 
   const claimsToAddOrOverride = {};
@@ -21,9 +19,16 @@ exports.handler = async (event) => {
     claimsToAddOrOverride['custom:tenantId'] = String(tenantId);
   }
 
-  console.log('claimsToAddOrOverride', JSON.stringify(claimsToAddOrOverride));
-
-  const requestPlain = JSON.parse(JSON.stringify(event.request || {}));
+  const response = {
+    claimsOverrideDetails: {
+      claimsToAddOrOverride,
+    },
+    claimsAndScopeOverrideDetails: {
+      idTokenGeneration: {
+        claimsToAddOrOverride,
+      },
+    },
+  };
 
   const result = {
     version: event.version,
@@ -31,16 +36,10 @@ exports.handler = async (event) => {
     region: event.region,
     userPoolId: event.userPoolId,
     userName: event.userName,
-    request: requestPlain,
-    response: {
-      claimsOverrideDetails: {
-        claimsToAddOrOverride,
-      },
-    },
+    request: event.request,
+    response,
   };
 
-  const serialized = JSON.stringify(result);
-  console.log('Return payload length', serialized.length);
-
-  return result;
+  console.log('Returning response keys:', Object.keys(response));
+  callback(null, result);
 };
