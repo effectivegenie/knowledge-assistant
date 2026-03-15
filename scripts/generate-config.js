@@ -19,7 +19,20 @@ if (!stack) {
 const regionMatch = stack.WebSocketUrl.match(/execute-api\.(.+?)\.amazonaws/);
 const region = regionMatch ? regionMatch[1] : process.env.AWS_REGION || 'us-east-1';
 
-const config = `export const config = {
+const adminApiUrl = stack.AdminApiUrl || '';
+
+const config = `// Auto-generated from cdk-outputs.json - do not edit manually
+export interface AppConfig {
+  cognito: {
+    userPoolId: string;
+    userPoolClientId: string;
+    region: string;
+  };
+  websocket: { url: string };
+  adminApiUrl: string;
+}
+
+export const config: AppConfig = {
   cognito: {
     userPoolId: '${stack.UserPoolId}',
     userPoolClientId: '${stack.UserPoolClientId}',
@@ -28,7 +41,11 @@ const config = `export const config = {
   websocket: {
     url: '${stack.WebSocketUrl}',
   },
+  adminApiUrl: '${adminApiUrl}',
 };
+
+/** Admin REST API base URL (for tenants and tenant users). */
+export const adminApiUrl: string = config.adminApiUrl;
 `;
 
 const configPath = path.join(__dirname, '..', 'frontend', 'src', 'config.ts');
@@ -37,4 +54,5 @@ console.log('Frontend config generated:');
 console.log(`  UserPoolId:       ${stack.UserPoolId}`);
 console.log(`  UserPoolClientId: ${stack.UserPoolClientId}`);
 console.log(`  WebSocketUrl:     ${stack.WebSocketUrl}`);
+console.log(`  AdminApiUrl:      ${adminApiUrl}`);
 console.log(`  Region:           ${region}`);
