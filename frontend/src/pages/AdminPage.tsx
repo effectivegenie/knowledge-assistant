@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Table, Button, Form, Input, Drawer, Space, Typography, message, Tag, Popconfirm } from 'antd';
-import { PlusOutlined, TeamOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { PlusOutlined, TeamOutlined, EditOutlined, DeleteOutlined, UserOutlined } from '@ant-design/icons';
 import { useAuth } from '../auth/AuthContext';
 import { adminApiUrl } from '../config';
 
@@ -11,6 +11,19 @@ interface Tenant {
   name: string;
   createdAt?: string;
 }
+
+interface TenantUser {
+  username: string;
+  email?: string;
+  status?: string;
+  createdAt?: string;
+}
+
+const STATUS_COLOR: Record<string, string> = {
+  CONFIRMED: 'green',
+  FORCE_CHANGE_PASSWORD: 'orange',
+  UNCONFIRMED: 'red',
+};
 
 const DRAWER_HEADER = {
   header: { background: '#1e3a5f', borderBottom: '2px solid #e6a800', padding: '16px 20px' },
@@ -27,6 +40,14 @@ export default function AdminPage() {
   const [submitting, setSubmitting]   = useState(false);
   const [createForm] = Form.useForm();
   const [editForm]   = Form.useForm();
+
+  // Users drawer state
+  const [usersTenant, setUsersTenant]     = useState<Tenant | null>(null);
+  const [users, setUsers]                 = useState<TenantUser[]>([]);
+  const [usersLoading, setUsersLoading]   = useState(false);
+  const [addUserOpen, setAddUserOpen]     = useState(false);
+  const [userSubmitting, setUserSubmitting] = useState(false);
+  const [userForm] = Form.useForm();
 
   const headers = { Authorization: `Bearer ${idToken}` };
 
@@ -117,6 +138,114 @@ export default function AdminPage() {
     editForm.setFieldsValue({ name: tenant.name });
   };
 
+  const openUsers = async (tenant: Tenant) => {
+    setUsersTenant(tenant);
+    setUsers([]);
+    setUsersLoading(true);
+    try {
+      const res = await fetch(`${adminApiUrl}/tenants/${encodeURIComponent(tenant.tenantId)}/users`, { headers });
+      if (!res.ok) throw new Error(res.statusText);
+      const data = await res.json();
+      setUsers(data.users || []);
+    } catch {
+      message.error('Failed to load users');
+    } finally {
+      setUsersLoading(false);
+    }
+  };
+
+  const refreshUsers = async (tenantId: string) => {
+    setUsersLoading(true);
+    try {
+      const res = await fetch(`${adminApiUrl}/tenants/${encodeURIComponent(tenantId)}/users`, { headers });
+      if (!res.ok) throw new Error(res.statusText);
+      const data = await res.json();
+      setUsers(data.users || []);
+    } catch {
+      message.error('Failed to load users');
+    } finally {
+      setUsersLoading(false);
+    }
+  };
+
+  const handleCreateUser = async (values: { email: string; temporaryPassword: string }) => {
+    if (!usersTenant) return;
+    setUserSubmitting(true);
+    try {
+      const res = await fetch(`${adminApiUrl}/tenants/${encodeURIComponent(usersTenant.tenantId)}/users`, {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: values.email.trim(), temporaryPassword: values.temporaryPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      message.success(`User ${values.email} created`);
+      userForm.resetFields();
+      setAddUserOpen(false);
+      refreshUsers(usersTenant.tenantId);
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : 'Failed to create user');
+    } finally {
+      setUserSubmitting(false);
+    }
+  };
+
+  const handleDeleteUser = async (username: string) => {
+    if (!usersTenant) return;
+    try {
+      const res = await fetch(
+        `${adminApiUrl}/tenants/${encodeURIComponent(usersTenant.tenantId)}/users/${encodeURIComponent(username)}`,
+        { method: 'DELETE', headers },
+      );
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || res.statusText);
+      }
+      message.success('User deleted');
+      refreshUsers(usersTenant.tenantId);
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : 'Failed to delete user');
+    }
+  };
+
+  const userColumns = [
+    {
+      title: 'Email',
+      dataIndex: 'email',
+      key: 'email',
+      render: (email: string) => <Text strong>{email}</Text>,
+    },
+    {
+      title: 'Status',
+      dataIndex: 'status',
+      key: 'status',
+      render: (status: string) => <Tag color={STATUS_COLOR[status] ?? 'default'}>{status ?? '—'}</Tag>,
+    },
+    {
+      title: 'Created',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
+      render: (t: string) => t ? new Date(t).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—',
+    },
+    {
+      title: 'Actions',
+      key: 'actions',
+      width: 80,
+      render: (_: unknown, record: TenantUser) => (
+        <Popconfirm
+          title={`Delete user "${record.email || record.username}"?`}
+          description="The user will be permanently removed from Cognito."
+          onConfirm={() => handleDeleteUser(record.username)}
+          okText="Delete"
+          okButtonProps={{ danger: true }}
+          cancelText="Cancel"
+        >
+          <Button type="text" icon={<DeleteOutlined />} danger />
+        </Popconfirm>
+      ),
+    },
+  ];
+
   const columns = [
     {
       title: 'Tenant ID',
@@ -139,9 +268,16 @@ export default function AdminPage() {
     {
       title: 'Actions',
       key: 'actions',
-      width: 100,
+      width: 120,
       render: (_: unknown, record: Tenant) => (
         <Space size={4}>
+          <Button
+            type="text"
+            icon={<UserOutlined />}
+            onClick={() => openUsers(record)}
+            style={{ color: '#1e3a5f' }}
+            title="Manage users"
+          />
           <Button
             type="text"
             icon={<EditOutlined />}
@@ -242,6 +378,69 @@ export default function AdminPage() {
             <Input placeholder="Display name" />
           </Form.Item>
         </Form>
+      </Drawer>
+
+      {/* ── Users Drawer ── */}
+      <Drawer
+        title={
+          <Space>
+            <UserOutlined style={{ color: '#e6a800' }} />
+            <span style={{ color: '#fff', fontWeight: 700 }}>Users</span>
+            {usersTenant && <Tag color="blue" style={{ marginLeft: 4 }}>{usersTenant.tenantId}</Tag>}
+          </Space>
+        }
+        placement="right"
+        open={!!usersTenant}
+        onClose={() => { setUsersTenant(null); setUsers([]); setAddUserOpen(false); userForm.resetFields(); }}
+        width={600}
+        closeIcon={<span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 16 }}>✕</span>}
+        styles={DRAWER_HEADER}
+        extra={
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => setAddUserOpen(true)}
+            size="small"
+          >
+            Add user
+          </Button>
+        }
+      >
+        <Table
+          loading={usersLoading}
+          dataSource={users}
+          rowKey="username"
+          columns={userColumns}
+          pagination={false}
+          bordered
+          size="small"
+        />
+
+        {/* ── Add User nested Drawer ── */}
+        <Drawer
+          title={<span style={{ color: '#fff', fontWeight: 700 }}>Add user</span>}
+          placement="right"
+          open={addUserOpen}
+          onClose={() => { setAddUserOpen(false); userForm.resetFields(); }}
+          width={360}
+          closeIcon={<span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 16 }}>✕</span>}
+          styles={DRAWER_HEADER}
+          footer={
+            <Space style={{ float: 'right' }}>
+              <Button onClick={() => { setAddUserOpen(false); userForm.resetFields(); }}>Cancel</Button>
+              <Button type="primary" loading={userSubmitting} onClick={() => userForm.submit()}>Create</Button>
+            </Space>
+          }
+        >
+          <Form form={userForm} layout="vertical" onFinish={handleCreateUser}>
+            <Form.Item name="email" label="Email" rules={[{ required: true, type: 'email', message: 'Valid email required' }]}>
+              <Input placeholder="user@example.com" />
+            </Form.Item>
+            <Form.Item name="temporaryPassword" label="Temporary password" rules={[{ required: true, min: 8, message: 'Min 8 characters' }]}>
+              <Input.Password placeholder="Min 8 characters" />
+            </Form.Item>
+          </Form>
+        </Drawer>
       </Drawer>
     </div>
   );
