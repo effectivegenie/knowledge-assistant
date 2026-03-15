@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { Layout, Card, Form, Input, Button, Spin, Typography, Space, Menu, message, ConfigProvider } from 'antd';
-import { MailOutlined, LockOutlined, LogoutOutlined, TeamOutlined, UserOutlined, MessageOutlined } from '@ant-design/icons';
+import { useState, useEffect } from 'react';
+import { Layout, Card, Form, Input, Button, Spin, Typography, Space, Menu, Drawer, message, ConfigProvider } from 'antd';
+import { MailOutlined, LockOutlined, LogoutOutlined, TeamOutlined, UserOutlined, MessageOutlined, MenuOutlined } from '@ant-design/icons';
 import { useAuth } from './auth/AuthContext';
 import ChatWidget from './components/ChatWidget';
 import AdminPage from './pages/AdminPage';
@@ -9,7 +9,6 @@ import TenantAdminPage from './pages/TenantAdminPage';
 const { Header, Content } = Layout;
 const { Text } = Typography;
 
-// Brand colors from logo: gold/amber + deep blue
 const AUTH_BLUE = '#1e3a5f';
 const AUTH_BLUE_LIGHT = '#2c5282';
 const AUTH_BLUE_MUTED = '#475569';
@@ -73,13 +72,7 @@ function AuthPage() {
             />
             <Typography.Title
               level={2}
-              style={{
-                margin: 0,
-                color: AUTH_BLUE,
-                fontWeight: 700,
-                fontSize: 26,
-                letterSpacing: '-0.02em',
-              }}
+              style={{ margin: 0, color: AUTH_BLUE, fontWeight: 700, fontSize: 26, letterSpacing: '-0.02em' }}
             >
               Knowledge Genie
             </Typography.Title>
@@ -120,6 +113,13 @@ function AuthPage() {
 export default function App() {
   const { isLoading, isAuthenticated, user, signOut, isRootAdmin, isTenantAdmin } = useAuth();
   const [view, setView] = useState<View>('chat');
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // Set smart default once roles are known
+  useEffect(() => {
+    if (isRootAdmin) setView('admin');
+    else if (isTenantAdmin) setView('tenant-admin');
+  }, [isRootAdmin, isTenantAdmin]);
 
   if (isLoading) {
     return (
@@ -129,52 +129,89 @@ export default function App() {
     );
   }
 
-  if (!isAuthenticated) {
-    return <AuthPage />;
-  }
+  if (!isAuthenticated) return <AuthPage />;
 
-  const menuItems = [
-    { key: 'chat', icon: <MessageOutlined />, label: 'Chat' },
-    ...(isRootAdmin ? [{ key: 'admin', icon: <TeamOutlined />, label: 'Tenants' }] : []),
-    ...(isTenantAdmin ? [{ key: 'tenant-admin', icon: <UserOutlined />, label: 'Tenant users' }] : []),
-  ];
+  // RootAdmin: Tenants only. TenantAdmin: Chat + Users. Regular: Chat only.
+  const menuItems = isRootAdmin
+    ? [{ key: 'admin', icon: <TeamOutlined />, label: 'Tenants' }]
+    : [
+        { key: 'chat', icon: <MessageOutlined />, label: 'Chat' },
+        ...(isTenantAdmin ? [{ key: 'tenant-admin', icon: <UserOutlined />, label: 'Users' }] : []),
+      ];
+
+  const handleMenuClick = ({ key }: { key: string }) => {
+    setView(key as View);
+    setDrawerOpen(false);
+  };
 
   return (
     <Layout style={{ height: '100vh' }}>
       <Header
         style={{
-          background: '#fff',
+          background: AUTH_BLUE,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '0 16px 0 0',
-          boxShadow: '0 1px 4px rgba(0, 0, 0, 0.08)',
+          padding: '0 20px',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
           zIndex: 10,
         }}
       >
-        <Space>
+        <Space size={12}>
+          <Button
+            type="text"
+            icon={<MenuOutlined style={{ fontSize: 18, color: '#fff' }} />}
+            onClick={() => setDrawerOpen(true)}
+            style={{ padding: '4px 8px' }}
+          />
           <img
             src="/genie-logo-final-2-no-text.png"
             alt="Knowledge Genie"
-            style={{ width: 28, height: 28, objectFit: 'contain', borderRadius: 6 }}
+            style={{ height: 40, objectFit: 'contain', borderRadius: 6, display: 'block' }}
           />
-          <span style={{ fontSize: 18, fontWeight: 600 }}>Knowledge Genie</span>
-          <Menu
-            mode="horizontal"
-            selectedKeys={[view]}
-            onClick={({ key }) => setView(key as View)}
-            items={menuItems}
-            style={{ minWidth: 0, flex: 1, marginLeft: 24 }}
-          />
+          <span style={{ color: '#fff', fontSize: 18, fontWeight: 700, letterSpacing: '-0.01em' }}>
+            Knowledge Genie
+          </span>
         </Space>
-        <Space>
-          <Text type="secondary">{user?.email}</Text>
-          <Button icon={<LogoutOutlined />} onClick={signOut}>
+        <Space size={8}>
+          <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 13 }}>{user?.email}</Text>
+          <Button
+            type="text"
+            icon={<LogoutOutlined />}
+            onClick={signOut}
+            style={{ color: 'rgba(255,255,255,0.85)' }}
+          >
             Sign Out
           </Button>
         </Space>
       </Header>
-      <Content style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+
+      <Drawer
+        title={
+          <Space size={10}>
+            <img src="/genie-logo-final-2-no-text.png" alt="" style={{ height: 28, objectFit: 'contain' }} />
+            <span style={{ fontWeight: 700, fontSize: 15 }}>Knowledge Genie</span>
+          </Space>
+        }
+        placement="left"
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        width={220}
+        styles={{ body: { padding: 0 } }}
+      >
+        <Menu
+          mode="inline"
+          selectedKeys={[view]}
+          onClick={handleMenuClick}
+          items={menuItems}
+          style={{ border: 'none', paddingTop: 8 }}
+        />
+        <div style={{ position: 'absolute', bottom: 16, left: 16, right: 16 }}>
+          <Text type="secondary" style={{ fontSize: 12 }}>{user?.email}</Text>
+        </div>
+      </Drawer>
+
+      <Content style={{ flex: 1, overflow: 'hidden' }}>
         {view === 'chat' && <ChatWidget />}
         {view === 'admin' && <AdminPage />}
         {view === 'tenant-admin' && <TenantAdminPage />}

@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Card, Table, Button, Form, Input, Modal, Space, Typography, message } from 'antd';
+import { Table, Button, Form, Input, Drawer, Space, Typography, message, Tag } from 'antd';
 import { PlusOutlined, TeamOutlined } from '@ant-design/icons';
 import { useAuth } from '../auth/AuthContext';
 import { adminApiUrl } from '../config';
 
-const { Title } = Typography;
+const { Title, Text } = Typography;
 
 interface Tenant {
   tenantId: string;
@@ -16,7 +16,7 @@ export default function AdminPage() {
   const { idToken } = useAuth();
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [loading, setLoading] = useState(true);
-  const [modalOpen, setModalOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm();
 
@@ -33,7 +33,7 @@ export default function AdminPage() {
       if (!res.ok) throw new Error(res.statusText);
       const data = await res.json();
       setTenants(data.tenants || []);
-    } catch (e) {
+    } catch {
       message.error('Failed to load tenants');
       setTenants([]);
     } finally {
@@ -60,9 +60,9 @@ export default function AdminPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || res.statusText);
-      message.success(`Tenant "${values.name}" created. Admin: ${values.adminEmail}`);
+      message.success(`Tenant "${values.name}" created`);
       form.resetFields();
-      setModalOpen(false);
+      setDrawerOpen(false);
       fetchTenants();
     } catch (e) {
       message.error(e instanceof Error ? e.message : 'Failed to create tenant');
@@ -71,55 +71,78 @@ export default function AdminPage() {
     }
   };
 
+  const columns = [
+    {
+      title: 'Tenant ID',
+      dataIndex: 'tenantId',
+      key: 'tenantId',
+      render: (id: string) => <Tag color="blue">{id}</Tag>,
+    },
+    {
+      title: 'Name',
+      dataIndex: 'name',
+      key: 'name',
+      render: (name: string) => <Text strong>{name}</Text>,
+    },
+    {
+      title: 'Created',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
+      render: (t: string) => t ? new Date(t).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—',
+    },
+  ];
+
   return (
-    <div style={{ padding: 24, maxWidth: 900, margin: '0 auto' }}>
-      <Space style={{ marginBottom: 24 }}>
-        <TeamOutlined style={{ fontSize: 24 }} />
-        <Title level={3} style={{ margin: 0 }}>Tenants</Title>
-      </Space>
-      <Card>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)} style={{ marginBottom: 16 }}>
-          Create tenant
+    <div style={{ padding: '24px 32px', height: '100%', overflow: 'auto' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+        <Space size={10}>
+          <TeamOutlined style={{ fontSize: 22, color: '#1e3a5f' }} />
+          <Title level={4} style={{ margin: 0, color: '#1e3a5f' }}>Tenants</Title>
+        </Space>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => setDrawerOpen(true)}>
+          New tenant
         </Button>
-        <Table
-          loading={loading}
-          dataSource={tenants}
-          rowKey="tenantId"
-          columns={[
-            { title: 'Tenant ID', dataIndex: 'tenantId', key: 'tenantId' },
-            { title: 'Name', dataIndex: 'name', key: 'name' },
-            { title: 'Created', dataIndex: 'createdAt', key: 'createdAt', render: (t: string) => t ? new Date(t).toLocaleDateString() : '-' },
-          ]}
-          pagination={false}
-        />
-      </Card>
-      <Modal
+      </div>
+
+      <Table
+        loading={loading}
+        dataSource={tenants}
+        rowKey="tenantId"
+        columns={columns}
+        pagination={false}
+        style={{ width: '100%' }}
+        bordered
+      />
+
+      <Drawer
         title="Create tenant"
-        open={modalOpen}
-        onCancel={() => { setModalOpen(false); form.resetFields(); }}
-        footer={null}
+        placement="right"
+        open={drawerOpen}
+        onClose={() => { setDrawerOpen(false); form.resetFields(); }}
+        width={400}
+        footer={
+          <Space style={{ float: 'right' }}>
+            <Button onClick={() => { setDrawerOpen(false); form.resetFields(); }}>Cancel</Button>
+            <Button type="primary" loading={submitting} onClick={() => form.submit()}>Create</Button>
+          </Space>
+        }
       >
         <Form form={form} layout="vertical" onFinish={handleCreate}>
-          <Form.Item name="tenantId" label="Tenant ID" rules={[{ required: true }]}>
+          <Form.Item name="tenantId" label="Tenant ID" rules={[{ required: true, message: 'Required' }]}
+            extra="Lowercase letters, numbers, hyphens only">
             <Input placeholder="e.g. acme" />
           </Form.Item>
-          <Form.Item name="name" label="Display name" rules={[{ required: true }]}>
+          <Form.Item name="name" label="Display name" rules={[{ required: true, message: 'Required' }]}>
             <Input placeholder="e.g. Acme Corp" />
           </Form.Item>
-          <Form.Item name="adminEmail" label="Tenant admin email" rules={[{ required: true, type: 'email' }]}>
+          <Form.Item name="adminEmail" label="Admin email" rules={[{ required: true, type: 'email', message: 'Valid email required' }]}>
             <Input placeholder="admin@acme.com" />
           </Form.Item>
-          <Form.Item name="temporaryPassword" label="Temporary password" rules={[{ required: true, min: 8 }]}>
+          <Form.Item name="temporaryPassword" label="Temporary password" rules={[{ required: true, min: 8, message: 'Min 8 characters' }]}>
             <Input.Password placeholder="Min 8 characters" />
           </Form.Item>
-          <Form.Item>
-            <Space>
-              <Button type="primary" htmlType="submit" loading={submitting}>Create</Button>
-              <Button onClick={() => setModalOpen(false)}>Cancel</Button>
-            </Space>
-          </Form.Item>
         </Form>
-      </Modal>
+      </Drawer>
     </div>
   );
 }
