@@ -7,7 +7,7 @@ import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as apigwv2 from 'aws-cdk-lib/aws-apigatewayv2';
-import { bedrock } from '@cdklabs/generative-ai-cdk-constructs';
+import { bedrock, s3vectors } from '@cdklabs/generative-ai-cdk-constructs';
 import { Construct } from 'constructs';
 import * as path from 'path';
 
@@ -53,8 +53,18 @@ export class KnowledgeAssistantStack extends cdk.Stack {
 
     // ==================== Knowledge Base ====================
 
+    const embeddingsModel = bedrock.BedrockFoundationModel.TITAN_EMBED_TEXT_V2_1024;
+
+    const vectorBucket = new s3vectors.VectorBucket(this, 'VectorBucket');
+    const vectorIndex = new s3vectors.VectorIndex(this, 'VectorIndex', {
+      vectorBucket,
+      dimension: embeddingsModel.vectorDimensions!,
+      nonFilterableMetadataKeys: ['AMAZON_BEDROCK_TEXT'],
+    });
+
     const knowledgeBase = new bedrock.VectorKnowledgeBase(this, 'KnowledgeBase', {
-      embeddingsModel: bedrock.BedrockFoundationModel.TITAN_EMBED_TEXT_V2_1024,
+      embeddingsModel,
+      vectorStore: vectorIndex,
       instruction: 'Use this knowledge base to answer questions based on the uploaded documents.',
     });
 
