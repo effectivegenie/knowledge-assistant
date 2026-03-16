@@ -21,8 +21,19 @@ export function getTenantIdFromKey(key) {
   return parts[0] || 'default';
 }
 
+// Normalize SNS-wrapped S3 events (SNS fanout pattern)
+function extractS3Record(event) {
+  const first = (event.Records || [])[0];
+  if (!first) return null;
+  if (first.EventSource === 'aws:sns') {
+    const inner = JSON.parse(first.Sns?.Message || '{}');
+    return (inner.Records || [])[0] || null;
+  }
+  return first;
+}
+
 export const handler = async (event) => {
-  const record = event.Records?.[0];
+  const record = extractS3Record(event);
   const key = record?.s3?.object?.key;
   const bucket = record?.s3?.bucket?.name;
   const tenantId = decodeURIComponent(getTenantIdFromKey(key));

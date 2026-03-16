@@ -164,8 +164,19 @@ async function saveFallbackRecord(tenantId, invoiceId, key, bucket, extractedAt)
   }
 }
 
+// Normalize SNS-wrapped S3 events (SNS fanout pattern)
+function extractS3Records(event) {
+  const first = (event.Records || [])[0];
+  if (!first) return [];
+  if (first.EventSource === 'aws:sns') {
+    const inner = JSON.parse(first.Sns?.Message || '{}');
+    return inner.Records || [];
+  }
+  return event.Records || [];
+}
+
 export const handler = async (event) => {
-  for (const record of (event.Records || [])) {
+  for (const record of extractS3Records(event)) {
     const bucket = record.s3.bucket.name;
     const key    = decodeURIComponent(record.s3.object.key.replace(/\+/g, ' '));
 

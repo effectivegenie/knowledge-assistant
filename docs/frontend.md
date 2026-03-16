@@ -5,6 +5,7 @@
 - **React 18** + **TypeScript**
 - **Vite** (build + dev server)
 - **Ant Design 5** (UI components)
+- **recharts** (bar charts in InvoicesPage Stats tab)
 - **amazon-cognito-identity-js** (Cognito auth)
 
 ## Configuration
@@ -118,12 +119,13 @@ Root component. Contains:
 - Login / new-password forms (shown when `user === null`)
 - Top header with hamburger menu button
 - Left navigation `Drawer` (312px) with menu items
-- Routing logic: `view` state switches between `chat`, `tenantAdmin`, `admin`
+- Routing logic: `view` state switches between `chat`, `admin`, `tenant-admin`, `invoices`
 
 **Views:**
-- `chat` — `ChatWidget`
-- `tenantAdmin` — `TenantAdminPage` (visible to `TenantAdmin` and `RootAdmin`)
-- `admin` — `AdminPage` (visible to `RootAdmin` only)
+- `chat` — `ChatWidget` (all authenticated users)
+- `admin` — `AdminPage` (RootAdmin only)
+- `tenant-admin` — `TenantAdminPage` (TenantAdmin only)
+- `invoices` — `InvoicesPage` (TenantAdmin only)
 
 ### `AdminPage.tsx`
 
@@ -137,17 +139,45 @@ Root admin interface (RootAdmin only).
 
 ### `TenantAdminPage.tsx`
 
-Tenant admin interface (TenantAdmin + RootAdmin).
+Tenant admin interface (TenantAdmin only).
 
-- User table for the current tenant
+- User table for the current tenant with search, sort and pagination
+- **Edit Groups Drawer**: change `businessGroups` for an existing user
 - **Add User Drawer**: `email`, `temporaryPassword`, `businessGroups` (multi-select, optional)
   - `businessGroups` are passed to `POST /tenants/{id}/users` and assigned in Cognito
-- **Upload Documents Drawer**: Ant Design `Dragger` with `customRequest`
-  - Group selector (multi-select) at the top — controls which business groups can access the uploaded documents
-  - Calls `POST /tenants/{id}/upload-url` with `{ filename, groups }` → receives `{ url, metadataUrl, key }`
-  - PUTs file directly to S3 with XHR (tracks upload progress)
-  - PUTs metadata JSON `{ metadataAttributes: { groups } }` to `metadataUrl`
+- **Upload Documents Drawer**: Ant Design `Dragger`
+  - **Category selector**: `general` (default, knowledge base only) or `invoice` (triggers Textract extraction pipeline)
+  - **Group selector** (multi-select): controls which business groups can access the uploaded documents
+  - Calls `POST /tenants/{id}/upload-url` with `{ filename, groups, category }` → receives `{ url, metadataUrl, key, category }`
+  - PUTs metadata JSON `{ metadataAttributes: { tenantId, groups, category } }` to `metadataUrl` **before** the document to avoid race conditions
+  - PUTs file directly to S3 with XHR
   - Supports multiple files, drag-and-drop
+
+### `InvoicesPage.tsx`
+
+Invoice Intelligence UI (TenantAdmin only). Four tabs:
+
+**Invoices tab**
+- Table of all invoices (extracted / confirmed / paid / rejected)
+- Search bar + status / direction filters + date range picker
+- Row selection for bulk confirm of `extracted` invoices
+- Click eye icon → **Invoice Details Drawer**: full extracted fields + "View original document" presigned link
+
+**Pending Review tab**
+- Table of `review_needed` invoices (low confidence extraction)
+- Click eye icon → **Review Drawer**: extracted data + presigned document link
+- Footer actions: **"Yes, it's an invoice"** (→ `confirmed`) / **"Not an invoice"** (→ `rejected`)
+- Bulk confirm button for selected records
+
+**Stats tab**
+- Date range picker for period filtering
+- KPI cards: Income, Expenses, Net, Unpaid (confirmed but not yet paid)
+- recharts `BarChart` — income vs expenses grouped by month
+
+**Company Profile tab**
+- Form for tenant legal identity: `legalName`, `vatNumber`, `bulstat`, `aliases` (comma-separated)
+- Saved to TenantsTable via `PUT /tenants/{id}/profile`
+- Used by the document-processor Lambda to determine invoice direction (incoming/outgoing)
 
 ## Components
 

@@ -2,6 +2,8 @@ import * as cdk from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3n from 'aws-cdk-lib/aws-s3-notifications';
+import * as sns from 'aws-cdk-lib/aws-sns';
+import * as subs from 'aws-cdk-lib/aws-sns-subscriptions';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as iam from 'aws-cdk-lib/aws-iam';
@@ -58,8 +60,21 @@ export class ComputeConstruct extends Construct {
       actions: ['bedrock:StartIngestionJob'],
       resources: [`arn:aws:bedrock:${stack.region}:${stack.account}:knowledge-base/*`],
     }));
-    docsBucket.addEventNotification(s3.EventType.OBJECT_CREATED, new s3n.LambdaDestination(this.kbSyncFn));
+
+    // ── S3 → SNS fanout (OBJECT_CREATED) ─────────────────────────────────────
+    // S3 does not allow two Lambda notifications with the same event type
+    // unless they have non-overlapping prefix/suffix filters. Use an SNS topic
+    // so multiple Lambdas can subscribe without conflicts.
+    const objectCreatedTopic = new sns.Topic(this, 'ObjectCreatedTopic');
+    docsBucket.addEventNotification(s3.EventType.OBJECT_CREATED, new s3n.SnsDestination(objectCreatedTopic));
+    objectCreatedTopic.addSubscription(new subs.LambdaSubscription(this.kbSyncFn));
+    // document-processor is subscribed below, after the function is created
+
+    // OBJECT_REMOVED goes directly to kbSyncFn (document-processor doesn't need it)
     docsBucket.addEventNotification(s3.EventType.OBJECT_REMOVED, new s3n.LambdaDestination(this.kbSyncFn));
+
+    // Store reference to subscribe documentProcessorFn later
+    const objectCreatedTopicRef = objectCreatedTopic;
 
     // ── Connect ──────────────────────────────────────────────────────────────
     this.connectFn = new lambda.Function(this, 'ConnectFunction', {
@@ -218,9 +233,7 @@ export class ComputeConstruct extends Construct {
         'arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
       ],
     }));
-    docsBucket.addEventNotification(
-      s3.EventType.OBJECT_CREATED,
-      new s3n.LambdaDestination(this.documentProcessorFn),
-    );
+    // Subscribe documentProcessorFn to the shared OBJECT_CREATED topic
+    objectCreatedTopicRef.addSubscription(new subs.LambdaSubscription(this.documentProcessorFn));
   }
 }

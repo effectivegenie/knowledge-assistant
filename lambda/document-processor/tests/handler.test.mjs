@@ -88,12 +88,30 @@ beforeEach(() => {
   process.env.MODEL_ID       = 'eu.anthropic.claude-haiku-test';
 });
 
+function makeSnsEvent(key, bucket = 'docs-bucket') {
+  const s3Event = makeS3Event(key, bucket);
+  return {
+    Records: [{
+      EventSource: 'aws:sns',
+      Sns: { Message: JSON.stringify(s3Event) },
+    }],
+  };
+}
+
 // ── Core flow ────────────────────────────────────────────────────────────────
 
 describe('document-processor — core extraction flow', () => {
   it('skips .metadata.json files', async () => {
     const { handler } = await import('../index.mjs');
     await handler(makeS3Event('acme/invoice.pdf.metadata.json'));
+    expect(mockTextractSend).not.toHaveBeenCalled();
+  });
+
+  it('processes SNS-wrapped OBJECT_CREATED event', async () => {
+    mockS3Send.mockRejectedValue(new Error('NoSuchKey'));
+    const { handler } = await import('../index.mjs');
+    await handler(makeSnsEvent('acme/orphan.pdf'));
+    // metadata not found → skips Textract (same as direct S3 no-metadata test)
     expect(mockTextractSend).not.toHaveBeenCalled();
   });
 

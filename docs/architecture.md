@@ -17,15 +17,22 @@ graph LR
     WS --> LD[Lambda\ndisconnect]
     HTTP --> LA[Lambda\nadmin]
     HTTP --> LTA[Lambda\ntenant-admin]
+    HTTP --> LInv[Lambda\ninvoices]
 
     LChat --> Bedrock[Amazon Bedrock\nKnowledge Base]
     LChat --> Claude[Claude\nHaiku 4.5]
     LA & LTA --> Cognito[Amazon Cognito]
     LA --> DDB[(DynamoDB\nTenantsTable)]
+    LInv --> DDB
+    LInv --> DDB3[(DynamoDB\nInvoicesTable)]
     LChat --> DDB2[(DynamoDB\nChatHistory)]
     LTA --> S3D[S3\nDocs Bucket]
     S3D -->|S3 event| LS[Lambda\nsync]
+    S3D -->|S3 event| LDP[Lambda\ndocument-processor]
     LS --> Bedrock
+    LDP --> Textract[Amazon Textract]
+    LDP --> Claude
+    LDP --> DDB3
 ```
 
 ## AWS Services
@@ -34,13 +41,14 @@ graph LR
 |---|---|
 | **CloudFront + S3** | Frontend hosting (React/Vite SPA) |
 | **API Gateway WebSocket** | Real-time streaming chat |
-| **API Gateway HTTP** | Admin REST API (tenants, users, uploads) |
+| **API Gateway HTTP** | Admin REST API (tenants, users, uploads, invoices) |
 | **Lambda (Node.js 20)** | All compute — stateless handlers |
 | **Amazon Cognito** | User pool, authentication, group-based RBAC |
 | **Amazon Bedrock** | Knowledge base management + Claude inference |
 | **S3 Vectors** | Vector store for Bedrock embeddings |
-| **DynamoDB** | Chat history, connections, tenant registry |
-| **S3 (docs bucket)** | Tenant document storage (source for Bedrock) |
+| **DynamoDB** | Chat history, connections, tenant registry, invoices |
+| **S3 (docs bucket)** | Tenant document storage (source for Bedrock + invoice processor) |
+| **Amazon Textract** | Invoice data extraction (`AnalyzeExpense`) |
 
 ## Data Flow — Chat Message
 
@@ -66,7 +74,7 @@ sequenceDiagram
     WS->>Chat: invoke
     Chat->>DDB: save user message
     Chat->>DDB: get tenant KB config
-    Chat->>KB: Retrieve (startsWith filter)
+    Chat->>KB: Retrieve (equals tenantId filter)
     KB-->>Chat: context chunks
     Chat->>Claude: InvokeModelWithResponseStream
     loop streaming
@@ -111,9 +119,13 @@ sequenceDiagram
 | `chat` | WS `sendMessage` | RAG retrieval + LLM streaming |
 | `history` | WS `history` / `clear_history` | Load/soft-delete chat history |
 | `admin` | HTTP API | Tenant CRUD, full delete cleanup |
-| `tenant-admin` | HTTP API | User CRUD, presigned upload URLs |
-| `sync` | S3 events | Start Bedrock ingestion job |
+| `tenant-admin` | HTTP API | User CRUD, presigned upload URLs (category: general\|invoice) |
+| `invoices` | HTTP API | Invoice CRUD, stats, presigned view URL, tenant profile |
+| `document-processor` | S3 `OBJECT_CREATED` | Textract extraction + Claude Haiku normalization → InvoicesTable |
+| `sync` | S3 `OBJECT_CREATED` | Start Bedrock ingestion job |
 | `pre-token-gen` | Cognito trigger | Inject `custom:tenantId` into ID token |
+
+Both `document-processor` and `sync` listen on the same S3 bucket `OBJECT_CREATED` event. They are independent and failures in either do not affect the other.
 
 ## Infrastructure as Code
 
