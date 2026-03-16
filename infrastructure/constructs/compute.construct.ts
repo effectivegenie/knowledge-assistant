@@ -32,6 +32,7 @@ export class ComputeConstruct extends Construct {
   public readonly adminFn: lambda.Function;
   public readonly tenantAdminFn: lambda.Function;
   public readonly invoicesFn: lambda.Function;
+  public readonly docConverterFn: lambda.Function;
   public readonly invoiceProcessorFn: lambda.Function;
 
   constructor(scope: Construct, id: string, props: ComputeProps) {
@@ -204,6 +205,30 @@ export class ComputeConstruct extends Construct {
     invoicesTable.grantReadWriteData(this.invoicesFn);
     tenantsTable.grantReadWriteData(this.invoicesFn);
     docsBucket.grantRead(this.invoicesFn);
+
+    // ── Doc Converter ────────────────────────────────────────────────────────
+    // Converts PDF/image files to plain text via Claude Vision and saves
+    // a .kb.txt sidecar so Bedrock KB can ingest it successfully.
+    this.docConverterFn = new lambda.Function(this, 'DocConverterFunction', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: 'index.handler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../../lambda/doc-converter')),
+      timeout: cdk.Duration.minutes(3),
+      memorySize: 512,
+      environment: {
+        MODEL_ID: 'eu.anthropic.claude-haiku-4-5-20251001-v1:0',
+      },
+    });
+    docsBucket.grantReadWrite(this.docConverterFn);
+    this.docConverterFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['bedrock:InvokeModel'],
+      resources: [
+        `arn:aws:bedrock:${stack.region}:${stack.account}:inference-profile/eu.anthropic.claude-haiku-4-5-20251001-v1:0`,
+        `arn:aws:bedrock:${stack.region}::foundation-model/*`,
+        'arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
+      ],
+    }));
+    objectCreatedTopicRef.addSubscription(new subs.LambdaSubscription(this.docConverterFn));
 
     // ── Invoice Processor ────────────────────────────────────────────────────
     this.invoiceProcessorFn = new lambda.Function(this, 'InvoiceProcessorFunction', {
