@@ -27,8 +27,10 @@ graph LR
     LInv --> DDB3[(DynamoDB\nInvoicesTable)]
     LChat --> DDB2[(DynamoDB\nChatHistory)]
     LTA --> S3D[S3\nDocs Bucket]
-    S3D -->|S3 event| LS[Lambda\nsync]
-    S3D -->|S3 event| LDP[Lambda\ndocument-processor]
+    S3D -->|OBJECT_CREATED| SNS[SNS Topic]
+    S3D -->|OBJECT_REMOVED| LS
+    SNS --> LS[Lambda\nsync]
+    SNS --> LDP[Lambda\ndocument-processor]
     LS --> Bedrock
     LDP --> Textract[Amazon Textract]
     LDP --> Claude
@@ -125,7 +127,7 @@ sequenceDiagram
 | `sync` | S3 `OBJECT_CREATED` | Start Bedrock ingestion job |
 | `pre-token-gen` | Cognito trigger | Inject `custom:tenantId` into ID token |
 
-Both `document-processor` and `sync` listen on the same S3 bucket `OBJECT_CREATED` event. They are independent and failures in either do not affect the other.
+Both `document-processor` and `sync` receive `OBJECT_CREATED` events via a shared **SNS topic** (S3 → SNS → Lambda subscriptions). This avoids the S3 constraint that prohibits two Lambda notifications for the same event type without non-overlapping prefix/suffix filters. `OBJECT_REMOVED` goes directly to `sync` only. Failures in either Lambda do not affect the other.
 
 ## Infrastructure as Code
 
