@@ -25,6 +25,7 @@ export class KnowledgeAssistantStack extends cdk.Stack {
       tenantsTable: database.tenantsTable,
       chatHistoryTable: database.chatHistoryTable,
       connectionsTable: database.connectionsTable,
+      invoicesTable: database.invoicesTable,
       knowledgeBase: knowledgeBase.knowledgeBase,
       docsDataSource: knowledgeBase.docsDataSource,
       userPool: auth.userPool,
@@ -39,6 +40,7 @@ export class KnowledgeAssistantStack extends cdk.Stack {
     const adminApi = new AdminApiConstruct(this, 'AdminApi', {
       adminFn: compute.adminFn,
       tenantAdminFn: compute.tenantAdminFn,
+      invoicesFn: compute.invoicesFn,
       userPool: auth.userPool,
       userPoolClient: auth.userPoolClient,
     });

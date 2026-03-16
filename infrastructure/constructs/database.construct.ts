@@ -6,6 +6,7 @@ export class DatabaseConstruct extends Construct {
   public readonly connectionsTable: dynamodb.Table;
   public readonly chatHistoryTable: dynamodb.Table;
   public readonly tenantsTable: dynamodb.Table;
+  public readonly invoicesTable: dynamodb.Table;
 
   constructor(scope: Construct, id: string) {
     super(scope, id);
@@ -28,6 +29,29 @@ export class DatabaseConstruct extends Construct {
       partitionKey: { name: 'tenantId', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    this.invoicesTable = new dynamodb.Table(this, 'InvoicesTable', {
+      partitionKey: { name: 'tenantId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'invoiceId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    // GSI for date-range queries (reporting, stats)
+    this.invoicesTable.addGlobalSecondaryIndex({
+      indexName: 'dateIndex',
+      partitionKey: { name: 'tenantId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'issueDate', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    // GSI for duplicate detection (supplierVatNumber#invoiceNumber per tenant)
+    this.invoicesTable.addGlobalSecondaryIndex({
+      indexName: 'dedupIndex',
+      partitionKey: { name: 'tenantId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'deduplicationKey', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.KEYS_ONLY,
     });
   }
 }

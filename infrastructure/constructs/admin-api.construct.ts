@@ -8,6 +8,7 @@ import { Construct } from 'constructs';
 export interface AdminApiProps {
   adminFn: lambda.Function;
   tenantAdminFn: lambda.Function;
+  invoicesFn: lambda.Function;
   userPool: cognito.UserPool;
   userPoolClient: cognito.UserPoolClient;
 }
@@ -26,12 +27,13 @@ export class AdminApiConstruct extends Construct {
   constructor(scope: Construct, id: string, props: AdminApiProps) {
     super(scope, id);
 
-    const { adminFn, tenantAdminFn, userPool, userPoolClient } = props;
+    const { adminFn, tenantAdminFn, invoicesFn, userPool, userPoolClient } = props;
     const stack = cdk.Stack.of(this);
     const region = stack.region;
 
     const adminUri = `arn:aws:apigateway:${region}:lambda:path/2015-03-31/functions/${adminFn.functionArn}/invocations`;
     const tenantAdminUri = `arn:aws:apigateway:${region}:lambda:path/2015-03-31/functions/${tenantAdminFn.functionArn}/invocations`;
+    const invoicesUri = `arn:aws:apigateway:${region}:lambda:path/2015-03-31/functions/${invoicesFn.functionArn}/invocations`;
 
     const adminIntegration = {
       type: 'aws_proxy',
@@ -43,6 +45,12 @@ export class AdminApiConstruct extends Construct {
       type: 'aws_proxy',
       httpMethod: 'POST',
       uri: tenantAdminUri,
+      payloadFormatVersion: '2.0',
+    };
+    const invoicesIntegration = {
+      type: 'aws_proxy',
+      httpMethod: 'POST',
+      uri: invoicesUri,
       payloadFormatVersion: '2.0',
     };
 
@@ -234,14 +242,100 @@ export class AdminApiConstruct extends Construct {
             parameters: [{ name: 'tenantId', in: 'path', required: true, schema: { type: 'string' } }],
             requestBody: {
               required: true,
-              content: { 'application/json': { schema: { type: 'object', required: ['filename'], properties: { filename: { type: 'string' } } } } },
+              content: { 'application/json': { schema: { type: 'object', required: ['filename'], properties: { filename: { type: 'string' }, groups: { type: 'array', items: { type: 'string' } }, category: { type: 'string', enum: ['general', 'invoice'] } } } } },
             },
             responses: {
-              '200': { description: 'Presigned URL', content: { 'application/json': { schema: { type: 'object', properties: { url: { type: 'string' }, key: { type: 'string' } } } } } },
+              '200': { description: 'Presigned URL', content: { 'application/json': { schema: { type: 'object', properties: { url: { type: 'string' }, metadataUrl: { type: 'string' }, key: { type: 'string' }, category: { type: 'string' } } } } } },
               '400': { description: 'Missing filename' },
               '403': { description: 'Forbidden' },
             },
             'x-amazon-apigateway-integration': tenantAdminIntegration,
+          },
+        },
+        '/tenants/{tenantId}/profile': {
+          get: {
+            operationId: 'getTenantProfile',
+            summary: 'Get tenant legal identity',
+            security: securedWith,
+            parameters: [{ name: 'tenantId', in: 'path', required: true, schema: { type: 'string' } }],
+            responses: { '200': { description: 'Tenant profile' }, '403': { description: 'Forbidden' } },
+            'x-amazon-apigateway-integration': invoicesIntegration,
+          },
+          put: {
+            operationId: 'updateTenantProfile',
+            summary: 'Update tenant legal identity',
+            security: securedWith,
+            parameters: [{ name: 'tenantId', in: 'path', required: true, schema: { type: 'string' } }],
+            requestBody: {
+              required: true,
+              content: { 'application/json': { schema: { type: 'object', properties: { legalName: { type: 'string' }, vatNumber: { type: 'string' }, bulstat: { type: 'string' }, aliases: { type: 'array', items: { type: 'string' } } } } } },
+            },
+            responses: { '200': { description: 'Updated' }, '403': { description: 'Forbidden' } },
+            'x-amazon-apigateway-integration': invoicesIntegration,
+          },
+        },
+        '/tenants/{tenantId}/invoices': {
+          get: {
+            operationId: 'listInvoices',
+            summary: 'List invoices for a tenant',
+            security: securedWith,
+            parameters: [
+              { name: 'tenantId', in: 'path', required: true, schema: { type: 'string' } },
+              { name: 'page', in: 'query', schema: { type: 'integer', default: 0 } },
+              { name: 'pageSize', in: 'query', schema: { type: 'integer', default: 20 } },
+              { name: 'status', in: 'query', schema: { type: 'string' } },
+              { name: 'direction', in: 'query', schema: { type: 'string' } },
+              { name: 'documentType', in: 'query', schema: { type: 'string' } },
+              { name: 'dateFrom', in: 'query', schema: { type: 'string' } },
+              { name: 'dateTo', in: 'query', schema: { type: 'string' } },
+              { name: 'search', in: 'query', schema: { type: 'string' } },
+            ],
+            responses: { '200': { description: 'Invoice list' }, '403': { description: 'Forbidden' } },
+            'x-amazon-apigateway-integration': invoicesIntegration,
+          },
+        },
+        '/tenants/{tenantId}/invoices/stats': {
+          get: {
+            operationId: 'getInvoiceStats',
+            summary: 'Get aggregated invoice stats',
+            security: securedWith,
+            parameters: [
+              { name: 'tenantId', in: 'path', required: true, schema: { type: 'string' } },
+              { name: 'dateFrom', in: 'query', schema: { type: 'string' } },
+              { name: 'dateTo', in: 'query', schema: { type: 'string' } },
+            ],
+            responses: { '200': { description: 'Stats' }, '403': { description: 'Forbidden' } },
+            'x-amazon-apigateway-integration': invoicesIntegration,
+          },
+        },
+        '/tenants/{tenantId}/invoices/{invoiceId}': {
+          put: {
+            operationId: 'updateInvoice',
+            summary: 'Update invoice status',
+            security: securedWith,
+            parameters: [
+              { name: 'tenantId', in: 'path', required: true, schema: { type: 'string' } },
+              { name: 'invoiceId', in: 'path', required: true, schema: { type: 'string' } },
+            ],
+            requestBody: {
+              required: true,
+              content: { 'application/json': { schema: { type: 'object', required: ['status'], properties: { status: { type: 'string' } } } } },
+            },
+            responses: { '200': { description: 'Updated' }, '403': { description: 'Forbidden' }, '404': { description: 'Not found' } },
+            'x-amazon-apigateway-integration': invoicesIntegration,
+          },
+        },
+        '/tenants/{tenantId}/invoices/{invoiceId}/view-url': {
+          get: {
+            operationId: 'getInvoiceViewUrl',
+            summary: 'Get presigned S3 GET URL for original invoice document',
+            security: securedWith,
+            parameters: [
+              { name: 'tenantId', in: 'path', required: true, schema: { type: 'string' } },
+              { name: 'invoiceId', in: 'path', required: true, schema: { type: 'string' } },
+            ],
+            responses: { '200': { description: 'View URL' }, '403': { description: 'Forbidden' }, '404': { description: 'Not found' } },
+            'x-amazon-apigateway-integration': invoicesIntegration,
           },
         },
       },
@@ -264,6 +358,7 @@ export class AdminApiConstruct extends Construct {
 
     adminFn.addPermission('ApiGwAdminInvoke', { principal: apigwPrincipal, sourceArn: sourceArnPrefix });
     tenantAdminFn.addPermission('ApiGwTenantAdminInvoke', { principal: apigwPrincipal, sourceArn: sourceArnPrefix });
+    invoicesFn.addPermission('ApiGwInvoicesInvoke', { principal: apigwPrincipal, sourceArn: sourceArnPrefix });
 
     this.apiUrl = `https://${api.ref}.execute-api.${region}.amazonaws.com`;
   }

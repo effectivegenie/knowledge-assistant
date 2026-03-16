@@ -14,6 +14,7 @@ export interface ComputeProps {
   tenantsTable: dynamodb.Table;
   chatHistoryTable: dynamodb.Table;
   connectionsTable: dynamodb.Table;
+  invoicesTable: dynamodb.Table;
   knowledgeBase: bedrock.VectorKnowledgeBase;
   docsDataSource: bedrock.S3DataSource;
   userPool: cognito.UserPool;
@@ -28,11 +29,13 @@ export class ComputeConstruct extends Construct {
   public readonly historyFn: lambda.Function;
   public readonly adminFn: lambda.Function;
   public readonly tenantAdminFn: lambda.Function;
+  public readonly invoicesFn: lambda.Function;
+  public readonly documentProcessorFn: lambda.Function;
 
   constructor(scope: Construct, id: string, props: ComputeProps) {
     super(scope, id);
 
-    const { docsBucket, tenantsTable, chatHistoryTable, connectionsTable,
+    const { docsBucket, tenantsTable, chatHistoryTable, connectionsTable, invoicesTable,
             knowledgeBase, docsDataSource, userPool, userPoolClient } = props;
 
     const stack = cdk.Stack.of(this);
@@ -170,5 +173,54 @@ export class ComputeConstruct extends Construct {
       resources: [userPool.userPoolArn],
     }));
     docsBucket.grantPut(this.tenantAdminFn);
+
+    // ── Invoices ─────────────────────────────────────────────────────────────
+    this.invoicesFn = new lambda.Function(this, 'InvoicesFunction', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: 'index.handler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../../lambda/invoices')),
+      timeout: cdk.Duration.seconds(30),
+      environment: {
+        INVOICES_TABLE: invoicesTable.tableName,
+        TENANTS_TABLE: tenantsTable.tableName,
+        DOCS_BUCKET_NAME: docsBucket.bucketName,
+      },
+    });
+    invoicesTable.grantReadWriteData(this.invoicesFn);
+    tenantsTable.grantReadWriteData(this.invoicesFn);
+    docsBucket.grantRead(this.invoicesFn);
+
+    // ── Document Processor ───────────────────────────────────────────────────
+    this.documentProcessorFn = new lambda.Function(this, 'DocumentProcessorFunction', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: 'index.handler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../../lambda/document-processor')),
+      timeout: cdk.Duration.minutes(3),
+      memorySize: 512,
+      environment: {
+        INVOICES_TABLE: invoicesTable.tableName,
+        TENANTS_TABLE: tenantsTable.tableName,
+        MODEL_ID: 'eu.anthropic.claude-haiku-4-5-20251001-v1:0',
+      },
+    });
+    invoicesTable.grantReadWriteData(this.documentProcessorFn);
+    tenantsTable.grantReadData(this.documentProcessorFn);
+    docsBucket.grantRead(this.documentProcessorFn);
+    this.documentProcessorFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['textract:AnalyzeExpense'],
+      resources: ['*'],
+    }));
+    this.documentProcessorFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['bedrock:InvokeModel'],
+      resources: [
+        `arn:aws:bedrock:${stack.region}:${stack.account}:inference-profile/eu.anthropic.claude-haiku-4-5-20251001-v1:0`,
+        `arn:aws:bedrock:${stack.region}::foundation-model/*`,
+        'arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
+      ],
+    }));
+    docsBucket.addEventNotification(
+      s3.EventType.OBJECT_CREATED,
+      new s3n.LambdaDestination(this.documentProcessorFn),
+    );
   }
 }

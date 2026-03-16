@@ -85,6 +85,7 @@ export default function TenantAdminPage() {
   // Upload state
   const [uploadFileList, setUploadFileList] = useState<UploadFile[]>([]);
   const [uploadGroups, setUploadGroups] = useState<string[]>([]);
+  const [uploadCategory, setUploadCategory] = useState<'general' | 'invoice'>('general');
   const [uploading, setUploading] = useState(false);
 
   const authHeaders = { Authorization: `Bearer ${idToken}` };
@@ -192,6 +193,7 @@ export default function TenantAdminPage() {
     setUploadDrawerOpen(false);
     setUploadFileList([]);
     setUploadGroups([]);
+    setUploadCategory('general');
   };
 
   const handleUpload = async () => {
@@ -206,16 +208,16 @@ export default function TenantAdminPage() {
       const res = await fetch(`${adminApiUrl}/tenants/${encodeURIComponent(tenantId)}/upload-url`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...authHeaders },
-          body: JSON.stringify({ filename: f.name, groups: effectiveGroups }),
+          body: JSON.stringify({ filename: f.name, groups: effectiveGroups, category: uploadCategory }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || res.statusText);
-        const { url, metadataUrl } = data;
+        const { url, metadataUrl, category } = data;
 
         // Upload metadata BEFORE document so it's already in S3 when ingestion runs.
         // tenantId is used for tenant isolation in the KB retrieve filter (equals operator,
         // which works with S3 Vectors). groups is used for post-retrieval access control.
-        const metadata = JSON.stringify({ metadataAttributes: { tenantId, groups: effectiveGroups } });
+        const metadata = JSON.stringify({ metadataAttributes: { tenantId, groups: effectiveGroups, category } });
         await fetch(metadataUrl, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -412,6 +414,21 @@ export default function TenantAdminPage() {
         <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
           Files will be uploaded to the <strong>{tenantId}</strong> knowledge base and indexed automatically.
         </Text>
+        <div style={{ marginBottom: 16 }}>
+          <Text strong style={{ display: 'block', marginBottom: 6 }}>Document category</Text>
+          <Select
+            value={uploadCategory}
+            onChange={(v) => setUploadCategory(v)}
+            style={{ width: '100%' }}
+            options={[
+              { value: 'general', label: 'General — knowledge base only' },
+              { value: 'invoice', label: 'Invoice — knowledge base + invoice processing' },
+            ]}
+          />
+          <Text type="secondary" style={{ fontSize: 12, marginTop: 4, display: 'block' }}>
+            Invoice documents are automatically processed by Textract for data extraction.
+          </Text>
+        </div>
         <div style={{ marginBottom: 16 }}>
           <Text strong style={{ display: 'block', marginBottom: 6 }}>Access groups</Text>
           <Select

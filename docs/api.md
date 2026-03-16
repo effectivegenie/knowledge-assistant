@@ -196,11 +196,14 @@ Generate presigned S3 PUT URLs for direct browser-to-S3 upload (document + metad
 ```json
 {
   "filename": "product-manual.pdf",
-  "groups": ["financial", "IT"]
+  "groups": ["financial", "IT"],
+  "category": "general"
 }
 ```
 
 `groups` is optional. When provided, documents are tagged with access groups — only users in those groups will see them in RAG results. Valid group names: `financial`, `accounting`, `operations`, `marketing`, `IT`, `warehouse`, `security`, `logistics`, `sales`, `design`, `HR`. Use `general` for documents accessible to all users regardless of group membership.
+
+`category` is optional. Valid values: `general` (default) or `invoice`. When set to `invoice`, the document is processed by the Textract + LLM extraction pipeline after upload and an invoice record is saved to DynamoDB.
 
 Filenames are sanitised: characters outside `[a-zA-Z0-9._\-\s]` are replaced with `_`.
 
@@ -209,7 +212,8 @@ Filenames are sanitised: characters outside `[a-zA-Z0-9._\-\s]` are replaced wit
 {
   "url": "https://s3.amazonaws.com/...?X-Amz-Signature=...",
   "metadataUrl": "https://s3.amazonaws.com/...product-manual.pdf.metadata.json?...",
-  "key": "acme/product-manual.pdf"
+  "key": "acme/product-manual.pdf",
+  "category": "general"
 }
 ```
 
@@ -218,10 +222,157 @@ Both URLs expire in 5 minutes. Upload workflow:
 1. `PUT <url>` with document bytes (Content-Type: application/pdf or appropriate MIME type)
 2. `PUT <metadataUrl>` with JSON body (Content-Type: application/json):
    ```json
-   { "metadataAttributes": { "tenantId": "acme", "groups": ["financial", "IT"] } }
+   { "metadataAttributes": { "tenantId": "acme", "groups": ["financial", "IT"], "category": "general" } }
    ```
 
-`tenantId` in metadata enables KB-level tenant isolation. The metadata file enables Bedrock KB group filtering. After a successful upload, the S3 event automatically triggers a Bedrock ingestion job.
+`tenantId` in metadata enables KB-level tenant isolation. The metadata file enables Bedrock KB group filtering. After a successful upload, the S3 event automatically triggers a Bedrock ingestion job. If `category` is `invoice`, a second S3 trigger runs the document-processor Lambda for invoice data extraction.
+
+---
+
+## Invoices
+
+All invoice endpoints require **RootAdmin** or **TenantAdmin of that tenant**.
+
+### `GET /tenants/{tenantId}/invoices`
+
+List invoices with optional filtering and pagination.
+
+**Query parameters**
+
+| Parameter | Description |
+|---|---|
+| `page` | Zero-based page index (default: `0`) |
+| `pageSize` | Items per page, max 100 (default: `20`) |
+| `status` | Filter by status: `pending`, `extracted`, `review_needed`, `confirmed`, `paid`, `rejected` |
+| `direction` | Filter by `incoming` or `outgoing` |
+| `documentType` | Filter by `invoice`, `proforma`, or `credit_note` |
+| `dateFrom` | Filter by issue date `>=` (YYYY-MM-DD) |
+| `dateTo` | Filter by issue date `<=` (YYYY-MM-DD) |
+| `search` | Case-insensitive match against `invoiceNumber`, `supplierName`, `clientName` |
+
+**Response 200**
+```json
+{
+  "items": [
+    {
+      "invoiceId": "uuid",
+      "tenantId": "acme",
+      "status": "confirmed",
+      "documentType": "invoice",
+      "direction": "incoming",
+      "invoiceNumber": "INV-001",
+      "issueDate": "2024-01-15",
+      "dueDate": "2024-02-15",
+      "supplierName": "Supplier Ltd",
+      "supplierVatNumber": "BG123456789",
+      "clientName": "Acme Ltd",
+      "clientVatNumber": "BG999999999",
+      "amountNet": 1000,
+      "amountVat": 190,
+      "amountTotal": 1190,
+      "confidence": 0.92,
+      "extractedAt": "2024-01-15T12:00:00.000Z"
+    }
+  ],
+  "total": 1,
+  "page": 0,
+  "pageSize": 20
+}
+```
+
+Invoice `status` lifecycle: `pending` → `extracted` | `review_needed` → `confirmed` | `rejected` → `paid`
+
+---
+
+### `PUT /tenants/{tenantId}/invoices/{invoiceId}`
+
+Update invoice status. Returns 404 if invoice does not exist.
+
+**Request body**
+```json
+{ "status": "confirmed" }
+```
+
+**Response 200**
+```json
+{ "invoiceId": "uuid", "status": "confirmed" }
+```
+
+When status is set to `confirmed` or `paid`, a timestamp (`confirmedAt` / `paidAt`) is automatically recorded.
+
+---
+
+### `GET /tenants/{tenantId}/invoices/{invoiceId}/view-url`
+
+Generate a presigned S3 GET URL (TTL: 600 s) for the original uploaded document.
+
+**Response 200**
+```json
+{ "url": "https://s3.amazonaws.com/...?X-Amz-Signature=..." }
+```
+
+---
+
+### `GET /tenants/{tenantId}/invoices/stats`
+
+Compute financial aggregates. Only `invoice` and `credit_note` documents with status `confirmed` or `paid` contribute to totals. Proforma invoices are excluded.
+
+**Query parameters**: optional `dateFrom` / `dateTo` (YYYY-MM-DD) to restrict the date range.
+
+**Response 200**
+```json
+{
+  "totals": {
+    "income": 50000,
+    "expenses": 20000,
+    "net": 30000,
+    "unpaid": 10000
+  },
+  "byMonth": [
+    { "month": "2024-01", "income": 10000, "expenses": 5000 },
+    { "month": "2024-02", "income": 15000, "expenses": 8000 }
+  ]
+}
+```
+
+- `income` — sum of `amountTotal` for outgoing invoices (confirmed + paid)
+- `expenses` — sum of `amountTotal` for incoming invoices (confirmed + paid)
+- `net` — `income - expenses`
+- `unpaid` — sum of `amountTotal` for confirmed (not yet paid) invoices regardless of direction
+
+---
+
+### `GET /tenants/{tenantId}/profile`
+
+Get tenant legal identity used by the invoice extraction pipeline to determine invoice direction.
+
+**Response 200**
+```json
+{
+  "legalName": "Acme Ltd",
+  "vatNumber": "BG123456789",
+  "bulstat": "123456789",
+  "aliases": ["Acme", "ACME Corp"]
+}
+```
+
+---
+
+### `PUT /tenants/{tenantId}/profile`
+
+Update tenant legal identity.
+
+**Request body**
+```json
+{
+  "legalName": "Acme Ltd",
+  "vatNumber": "BG123456789",
+  "bulstat": "123456789",
+  "aliases": ["Acme", "ACME Corp"]
+}
+```
+
+**Response 200** — same shape as GET.
 
 ---
 

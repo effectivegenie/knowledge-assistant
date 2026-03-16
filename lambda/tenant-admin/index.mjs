@@ -86,9 +86,13 @@ export const handler = async (event) => {
 
   // ── POST /tenants/{tenantId}/upload-url ───────────────────────────────────
   if (method === 'POST' && path.endsWith('/upload-url')) {
-    const { filename, groups } = parseBody(event);
+    const { filename, groups, category: rawCategory } = parseBody(event);
     if (!filename) return jsonResponse(400, { error: 'Missing filename' });
     if (!DOCS_BUCKET_NAME) return jsonResponse(500, { error: 'Upload not configured' });
+
+    // Validate category (default: 'general')
+    const VALID_CATEGORIES = ['general', 'invoice'];
+    const category = VALID_CATEGORIES.includes(rawCategory) ? rawCategory : 'general';
 
     // Validate requested groups (business groups + 'general'); default to ['general'] if none provided
     const rawGroups = Array.isArray(groups) ? groups : [];
@@ -108,8 +112,8 @@ export const handler = async (event) => {
         new PutObjectCommand({ Bucket: DOCS_BUCKET_NAME, Key: metadataKey, ContentType: 'application/json' }),
         { expiresIn: 300 },
       );
-      log.info('Upload URL generated', { tenantId: tenantIdFromPath, key, groups: docGroups });
-      return jsonResponse(200, { url, metadataUrl, key });
+      log.info('Upload URL generated', { tenantId: tenantIdFromPath, key, groups: docGroups, category });
+      return jsonResponse(200, { url, metadataUrl, key, category });
     } catch (err) {
       log.error('Presigned URL generation failed', { tenantId: tenantIdFromPath, key, error: err.message });
       return jsonResponse(500, { error: 'Failed to generate upload URL' });

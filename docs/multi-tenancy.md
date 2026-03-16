@@ -44,6 +44,53 @@ Each tenant is an isolated workspace with:
 | `groups` | L | Cognito groups |
 | `connectedAt` | S | ISO timestamp |
 
+### InvoicesTable
+
+Stores extracted invoice records produced by the document-processor Lambda.
+
+| Attribute | Type | Notes |
+|---|---|---|
+| `tenantId` | S (PK) | Tenant owning the invoice |
+| `invoiceId` | S (SK) | UUID generated at extraction time |
+| `status` | S | `pending` → `extracted` | `review_needed` → `confirmed` | `rejected` → `paid` |
+| `documentType` | S | `invoice`, `proforma`, or `credit_note` |
+| `direction` | S | `incoming` (we are buyer) or `outgoing` (we are seller) |
+| `invoiceNumber` | S | Extracted invoice number (optional) |
+| `issueDate` | S | YYYY-MM-DD (optional) |
+| `dueDate` | S | YYYY-MM-DD (optional) |
+| `supplierName` | S | (optional) |
+| `supplierVatNumber` | S | (optional) |
+| `clientName` | S | (optional) |
+| `clientVatNumber` | S | (optional) |
+| `amountNet` | N | (optional) |
+| `amountVat` | N | (optional) |
+| `amountTotal` | N | (optional) |
+| `confidence` | N | 0–1, from LLM normalization |
+| `s3Key` | S | Original document S3 key |
+| `s3Bucket` | S | S3 bucket name |
+| `extractedAt` | S | ISO timestamp |
+| `confirmedAt` | S | Set when status → `confirmed` (optional) |
+| `paidAt` | S | Set when status → `paid` (optional) |
+| `deduplicationKey` | S | `{supplierVatNumber}#{invoiceNumber}`, used for dedup (optional) |
+
+**GSIs:**
+
+| Index | PK | SK | Use |
+|---|---|---|---|
+| `dateIndex` | `tenantId` (S) | `issueDate` (S) | Date-range queries |
+| `dedupIndex` | `tenantId` (S) | `deduplicationKey` (S) | Duplicate detection before insert |
+
+`dedupIndex` projects `KEYS_ONLY`. When both `supplierVatNumber` and `invoiceNumber` are extracted, the document-processor queries this index to prevent saving the same invoice twice.
+
+Also note: `TenantsTable` is extended with legal identity fields used by the extraction pipeline:
+
+| Attribute | Type | Notes |
+|---|---|---|
+| `legalName` | S | Company legal name |
+| `vatNumber` | S | VAT registration number |
+| `bulstat` | S | Bulgarian registration number |
+| `aliases` | L | List of alternative names used on documents |
+
 ## Tenant Lifecycle
 
 ```mermaid
