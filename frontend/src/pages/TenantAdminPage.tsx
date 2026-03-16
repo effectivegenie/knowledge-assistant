@@ -13,7 +13,14 @@ const BUSINESS_GROUPS = [
   'warehouse', 'security', 'logistics', 'sales',
 ];
 
+// Options for user assignment (business groups only)
 const GROUP_OPTIONS = BUSINESS_GROUPS.map(g => ({ label: g, value: g }));
+
+// Options for document tagging (business groups + general)
+const DOCUMENT_TAG_OPTIONS = [
+  { label: 'general — accessible to all users', value: 'general' },
+  ...BUSINESS_GROUPS.map(g => ({ label: g, value: g })),
+];
 
 interface TenantUser {
   username: string;
@@ -246,7 +253,7 @@ export default function TenantAdminPage() {
           <Text strong style={{ display: 'block', marginBottom: 6 }}>Access groups</Text>
           <Select
             mode="multiple"
-            options={GROUP_OPTIONS}
+            options={DOCUMENT_TAG_OPTIONS}
             value={uploadGroups}
             onChange={(vals) => {
               setUploadGroups(vals);

@@ -123,10 +123,12 @@ export const handler = async (event) => {
             const tenantFilter = { startsWith: { key: 'x-amz-bedrock-kb-source-uri', value: sourcePrefix } };
 
             if (!isAdmin && businessGroups.length > 0) {
+              // Include user's business groups + 'general' (accessible to all users)
+              const groupTags = [...businessGroups, 'general'];
               filter = {
                 andAll: [
                   tenantFilter,
-                  { orAll: businessGroups.map(g => ({ listContains: { key: 'groups', value: g } })) },
+                  { orAll: groupTags.map(g => ({ listContains: { key: 'groups', value: g } })) },
                 ],
               };
             } else {

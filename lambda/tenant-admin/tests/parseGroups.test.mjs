@@ -149,6 +149,18 @@ describe('tenant-admin handler — POST /upload-url group validation', () => {
     expect(JSON.parse(res.body).error).toMatch(/Invalid groups/);
   });
 
+  it('accepts general tag in upload', async () => {
+    const { handler: h } = await import('../index.mjs');
+    const res = await h(makeUploadEvent({ filename: 'doc.pdf', groups: ['general'] }));
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('accepts mixed general + business group tags', async () => {
+    const { handler: h } = await import('../index.mjs');
+    const res = await h(makeUploadEvent({ filename: 'doc.pdf', groups: ['general', 'IT'] }));
+    expect(res.statusCode).toBe(200);
+  });
+
   it('returns url and metadataUrl when no groups are specified', async () => {
     const { handler: h } = await import('../index.mjs');
     const res = await h(makeUploadEvent({ filename: 'doc.pdf' }));

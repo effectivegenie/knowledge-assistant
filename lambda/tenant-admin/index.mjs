@@ -13,6 +13,9 @@ const BUSINESS_GROUPS = [
   'warehouse', 'security', 'logistics', 'sales',
 ];
 
+// Document tags include business groups + 'general' (accessible to all users)
+const DOCUMENT_TAGS = [...BUSINESS_GROUPS, 'general'];
+
 function parseBody(event) {
   try { return event.body ? JSON.parse(event.body) : {}; } catch { return {}; }
 }
@@ -60,9 +63,9 @@ export const handler = async (event) => {
     if (!filename) return jsonResponse(400, { error: 'Missing filename' });
     if (!DOCS_BUCKET_NAME) return jsonResponse(500, { error: 'Upload not configured' });
 
-    // Validate requested groups
+    // Validate requested groups (business groups + 'general')
     const docGroups = Array.isArray(groups) ? groups : [];
-    const invalidGroups = docGroups.filter(g => !BUSINESS_GROUPS.includes(g));
+    const invalidGroups = docGroups.filter(g => !DOCUMENT_TAGS.includes(g));
     if (invalidGroups.length > 0) {
       return jsonResponse(400, { error: `Invalid groups: ${invalidGroups.join(', ')}` });
     }
