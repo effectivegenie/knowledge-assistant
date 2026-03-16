@@ -155,13 +155,17 @@ export const handler = async (event) => {
         Username: adminEmail,
         GroupName: TENANT_ADMIN_GROUP,
       }));
-      // Assign all business groups to the tenant admin user
+      // Assign all business groups to the tenant admin user — non-fatal per group
       for (const group of BUSINESS_GROUPS) {
-        await cognito.send(new AdminAddUserToGroupCommand({
-          UserPoolId: USER_POOL_ID,
-          Username: adminEmail,
-          GroupName: group,
-        }));
+        try {
+          await cognito.send(new AdminAddUserToGroupCommand({
+            UserPoolId: USER_POOL_ID,
+            Username: adminEmail,
+            GroupName: group,
+          }));
+        } catch (err) {
+          log.warn('Failed to assign business group to tenant admin (non-fatal)', { adminEmail, group, error: err.message });
+        }
       }
       log.info('Cognito admin user created and groups assigned', { adminEmail, tenantId: id });
     } catch (err) {

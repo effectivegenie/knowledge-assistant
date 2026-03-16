@@ -70,6 +70,8 @@ export class AuthConstruct extends Construct {
       { id: 'security',    description: 'Security department' },
       { id: 'logistics',   description: 'Logistics department' },
       { id: 'sales',       description: 'Sales department' },
+      { id: 'design',      description: 'Design department' },
+      { id: 'HR',          description: 'Human Resources department' },
     ];
     for (const g of businessGroups) {
       new cognito.CfnUserPoolGroup(this, `BusinessGroup${g.id.charAt(0).toUpperCase() + g.id.slice(1)}`, {

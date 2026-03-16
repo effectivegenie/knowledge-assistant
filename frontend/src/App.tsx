@@ -221,10 +221,11 @@ export default function App() {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   useEffect(() => {
+    if (!isAuthenticated) { setView('chat'); return; }
     if (isRootAdmin) setView('admin');
     else if (isTenantAdmin) setView('tenant-admin');
-    // Regular users default to chat
-  }, [isRootAdmin, isTenantAdmin]);
+    else setView('chat');
+  }, [isAuthenticated, isRootAdmin, isTenantAdmin]);
 
   if (isLoading) {
     return (

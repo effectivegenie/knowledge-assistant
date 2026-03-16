@@ -190,19 +190,27 @@ export const handler = async (event) => {
         ],
         MessageAction: 'SUPPRESS',
       }));
-      for (const group of requestedGroups) {
+    } catch (err) {
+      log.error('Failed to create tenant user', { email, tenantId: tenantIdFromPath, error: err.message });
+      return jsonResponse(400, { error: 'Failed to create user', detail: err.message });
+    }
+
+    // Assign business groups — non-fatal per group so user creation always succeeds
+    const assignedGroups = [];
+    for (const group of requestedGroups) {
+      try {
         await cognito.send(new AdminAddUserToGroupCommand({
           UserPoolId: USER_POOL_ID,
           Username: email,
           GroupName: group,
         }));
+        assignedGroups.push(group);
+      } catch (err) {
+        log.warn('Failed to assign group to new user (non-fatal)', { email, group, error: err.message });
       }
-      log.info('Tenant user created', { email, tenantId: tenantIdFromPath, businessGroups: requestedGroups });
-      return jsonResponse(200, { email, tenantId: tenantIdFromPath, businessGroups: requestedGroups });
-    } catch (err) {
-      log.error('Failed to create tenant user', { email, tenantId: tenantIdFromPath, error: err.message });
-      return jsonResponse(400, { error: 'Failed to create user', detail: err.message });
     }
+    log.info('Tenant user created', { email, tenantId: tenantIdFromPath, businessGroups: assignedGroups });
+    return jsonResponse(200, { email, tenantId: tenantIdFromPath, businessGroups: assignedGroups });
   }
 
   // ── PUT /tenants/{tenantId}/users/{username}/groups ───────────────────────
@@ -227,9 +235,11 @@ export const handler = async (event) => {
       const toAdd    = requestedGroups.filter(g => !currentGroups.includes(g));
       const toRemove = currentGroups.filter(g => !requestedGroups.includes(g));
 
-      await Promise.all([
-        ...toAdd.map(g => cognito.send(new AdminAddUserToGroupCommand({ UserPoolId: USER_POOL_ID, Username: username, GroupName: g }))),
-        ...toRemove.map(g => cognito.send(new AdminRemoveUserFromGroupCommand({ UserPoolId: USER_POOL_ID, Username: username, GroupName: g }))),
+      await Promise.allSettled([
+        ...toAdd.map(g => cognito.send(new AdminAddUserToGroupCommand({ UserPoolId: USER_POOL_ID, Username: username, GroupName: g }))
+          .catch(err => { log.warn('Failed to add group (non-fatal)', { username, group: g, error: err.message }); })),
+        ...toRemove.map(g => cognito.send(new AdminRemoveUserFromGroupCommand({ UserPoolId: USER_POOL_ID, Username: username, GroupName: g }))
+          .catch(err => { log.warn('Failed to remove group (non-fatal)', { username, group: g, error: err.message }); })),
       ]);
 
       log.info('User groups updated', { username, tenantId: tenantIdFromPath, added: toAdd, removed: toRemove });
