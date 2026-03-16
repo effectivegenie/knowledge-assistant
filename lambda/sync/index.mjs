@@ -8,7 +8,7 @@ const TENANTS_TABLE = process.env.TENANTS_TABLE;
 const DEFAULT_KNOWLEDGE_BASE_ID = process.env.DEFAULT_KNOWLEDGE_BASE_ID;
 const DEFAULT_DATA_SOURCE_ID = process.env.DEFAULT_DATA_SOURCE_ID;
 
-function getTenantIdFromKey(key) {
+export function getTenantIdFromKey(key) {
   if (!key || typeof key !== 'string') return 'default';
   const parts = key.split('/').filter(Boolean);
   return parts[0] || 'default';

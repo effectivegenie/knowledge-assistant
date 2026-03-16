@@ -4,7 +4,7 @@ import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 const ddbClient = new DynamoDBClient({});
 const ddb = DynamoDBDocumentClient.from(ddbClient);
 
-const decodeJwtPayload = (token) => {
+export const decodeJwtPayload = (token) => {
   const segment = token.split('.')[1];
   const base64 = segment.replace(/-/g, '+').replace(/_/g, '/');
   return JSON.parse(Buffer.from(base64, 'base64').toString());

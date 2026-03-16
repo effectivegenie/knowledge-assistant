@@ -29,10 +29,7 @@ function jsonResponse(statusCode, data) {
   };
 }
 
-function getGroupsFromClaims(event) {
-  const auth = event.requestContext?.authorizer?.jwt?.claims;
-  if (!auth) return [];
-  const raw = auth['cognito:groups'];
+export function parseGroups(raw) {
   if (!raw) return [];
   if (Array.isArray(raw)) return raw;
   if (typeof raw === 'string') {
@@ -43,6 +40,12 @@ function getGroupsFromClaims(event) {
     return raw.split(/[\s,]+/).filter(Boolean);
   }
   return [];
+}
+
+function getGroupsFromClaims(event) {
+  const auth = event.requestContext?.authorizer?.jwt?.claims;
+  if (!auth) return [];
+  return parseGroups(auth['cognito:groups']);
 }
 
 export const handler = async (event) => {

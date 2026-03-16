@@ -15,17 +15,20 @@
     "destroy": "cdk destroy",
     "frontend:install": "cd frontend && npm install",
     "frontend:dev": "cd frontend && npm run dev",
-    "frontend:build": "cd frontend && npm run build"
+    "frontend:build": "cd frontend && npm run build",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
+    "@cdklabs/generative-ai-cdk-constructs": "^0.1.315",
     "aws-cdk-lib": "^2.160.0",
-    "constructs": "^10.0.0",
-    "@cdklabs/generative-ai-cdk-constructs": "^0.1.315"
+    "constructs": "^10.0.0"
   },
   "devDependencies": {
-    "typescript": "~5.6.0",
-    "aws-cdk": "^2.160.0",
     "@types/node": "^22.0.0",
-    "ts-node": "^10.9.0"
+    "aws-cdk": "^2.160.0",
+    "ts-node": "^10.9.0",
+    "typescript": "~5.6.0",
+    "vitest": "^2.1.9"
   }
 }
