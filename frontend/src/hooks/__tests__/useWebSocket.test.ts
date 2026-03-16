@@ -4,11 +4,18 @@ import { describe, it, expect, vi } from 'vitest';
 // Rather than rendering the hook (which requires WebSocket + auth), we test
 // the state transitions that happen in the onmessage handler.
 
+interface Citation {
+  source: string;
+  score: number;
+  excerpt: string;
+}
+
 interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   isStreaming?: boolean;
+  citations?: Citation[];
 }
 
 // Inline the state transitions from useWebSocket for unit testing
@@ -28,6 +35,17 @@ function applyEnd(messages: ChatMessage[]): ChatMessage[] {
   for (let i = updated.length - 1; i >= 0; i--) {
     if (updated[i].role === 'assistant' && updated[i].isStreaming) {
       updated[i] = { ...updated[i], isStreaming: false };
+      break;
+    }
+  }
+  return updated;
+}
+
+function applyCitations(messages: ChatMessage[], citations: Citation[]): ChatMessage[] {
+  const updated = [...messages];
+  for (let i = updated.length - 1; i >= 0; i--) {
+    if (updated[i].role === 'assistant' && !updated[i].isStreaming) {
+      updated[i] = { ...updated[i], citations };
       break;
     }
   }
@@ -119,6 +137,57 @@ describe('useWebSocket message state transitions', () => {
       const msgs = applyChunk(baseMessages, 'Partial');
       const result = applyError(msgs, 'Timeout');
       expect(result[1].content).toBe('Partial\n\nError: Timeout');
+    });
+  });
+
+  describe('citations', () => {
+    const doneMsgs: ChatMessage[] = [
+      { id: '1', role: 'user', content: 'Hello' },
+      { id: '2', role: 'assistant', content: 'Here is the answer.', isStreaming: false },
+    ];
+
+    const sampleCitations: Citation[] = [
+      { source: 's3://bucket/tenant/doc.pdf', score: 0.92, excerpt: 'Relevant excerpt from doc.' },
+      { source: 's3://bucket/tenant/manual.pdf', score: 0.85, excerpt: 'Another relevant snippet.' },
+    ];
+
+    it('attaches citations to the last non-streaming assistant message', () => {
+      const result = applyCitations(doneMsgs, sampleCitations);
+      expect(result[1].citations).toEqual(sampleCitations);
+    });
+
+    it('does not modify user messages', () => {
+      const result = applyCitations(doneMsgs, sampleCitations);
+      expect(result[0].citations).toBeUndefined();
+    });
+
+    it('does not attach citations to a still-streaming message', () => {
+      // citations arrive after end, so streaming=false; this test ensures we skip streaming ones
+      const streamingMsgs: ChatMessage[] = [
+        { id: '1', role: 'user', content: 'Q' },
+        { id: '2', role: 'assistant', content: '', isStreaming: true },
+      ];
+      const result = applyCitations(streamingMsgs, sampleCitations);
+      // No non-streaming assistant message exists, so no citations applied
+      expect(result[1].citations).toBeUndefined();
+    });
+
+    it('attaches citations to the last of multiple assistant messages', () => {
+      const multiMsgs: ChatMessage[] = [
+        { id: '1', role: 'user', content: 'Q1' },
+        { id: '2', role: 'assistant', content: 'A1', isStreaming: false },
+        { id: '3', role: 'user', content: 'Q2' },
+        { id: '4', role: 'assistant', content: 'A2', isStreaming: false },
+      ];
+      const result = applyCitations(multiMsgs, sampleCitations);
+      expect(result[1].citations).toBeUndefined();
+      expect(result[3].citations).toEqual(sampleCitations);
+    });
+
+    it('preserves existing message content when attaching citations', () => {
+      const result = applyCitations(doneMsgs, sampleCitations);
+      expect(result[1].content).toBe('Here is the answer.');
+      expect(result[1].isStreaming).toBe(false);
     });
   });
 });

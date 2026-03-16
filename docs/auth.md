@@ -12,11 +12,30 @@ All users are stored in a single Cognito User Pool. Self sign-up is disabled —
 
 ### Groups
 
+#### System Groups
+
 | Group | Purpose |
 |---|---|
 | `RootAdmin` | Full access — can create/delete tenants, manage any tenant's users |
-| `TenantAdmin` | Can manage users within their own tenant only |
-| _(no group)_ | Regular user — can only use the chat |
+| `TenantAdmin` | Can manage users within their own tenant only; automatically assigned all 9 business groups |
+
+#### Business Groups
+
+Users can belong to one or more of the following business domain groups. These control which documents they can retrieve via RAG.
+
+| Group | Domain |
+|---|---|
+| `financial` | Financial department |
+| `accounting` | Accounting department |
+| `operations` | Operations department |
+| `marketing` | Marketing department |
+| `IT` | IT department |
+| `warehouse` | Warehouse department |
+| `security` | Security department |
+| `logistics` | Logistics department |
+| `sales` | Sales department |
+
+RootAdmin and TenantAdmin bypass all group-based document filters — they can access all documents regardless of group tagging.
 
 ## Pre-Token Generation Trigger
 
@@ -34,15 +53,16 @@ API Gateway WebSocket does not natively support JWT authorizers on `$connect`. I
 wss://...execute-api.../prod?token=<idToken>
 ```
 
-The `connect` Lambda (`lambda/connect/index.mjs`) manually validates the JWT:
+The `connect` Lambda (`lambda/connect/index.mjs`) fully verifies the JWT using Cognito's JWKS endpoint:
 
-1. Decodes the base64url payload (no signature verification in Lambda — relies on Cognito issuer URL match + expiry)
-2. Checks `iss` matches `https://cognito-idp.{region}.amazonaws.com/{userPoolId}`
-3. Checks `exp > now`
-4. Checks `aud` or `client_id` matches the App Client ID
-5. Stores `connectionId`, `userId`, `email`, `tenantId`, `groups` in DynamoDB
+1. Decodes the JWT header → extracts `kid` (key ID) and `alg`
+2. Validates claims: `iss` matches `https://cognito-idp.{region}.amazonaws.com/{userPoolId}`, `exp > now`, `aud`/`client_id` matches the App Client ID
+3. Fetches JWKS from `https://cognito-idp.{region}.amazonaws.com/{userPoolId}/.well-known/jwks.json` (cached at module level for Lambda container lifetime)
+4. Finds the JWK matching `kid`; on cache miss triggers one forced refresh (handles key rotation)
+5. Verifies the RSA-SHA256 cryptographic signature using Node.js `crypto.createVerify`
+6. On success: stores `connectionId`, `userId`, `email`, `tenantId`, `groups` in DynamoDB
 
-> **Note:** The connect Lambda does not verify the JWT signature cryptographically. It trusts the issuer URL and expiry check. For production hardening, consider adding signature verification via JWKS.
+> **Security**: The connect Lambda performs full cryptographic signature verification using Cognito's public JWKS. Tokens with forged payloads or signed by unknown keys are rejected.
 
 ## HTTP API Authorization
 

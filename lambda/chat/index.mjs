@@ -9,11 +9,14 @@ const dynamo = new DynamoDBClient({});
 
 const CHAT_TABLE = process.env.CHAT_TABLE;
 const TENANTS_TABLE = process.env.TENANTS_TABLE;
+const CONNECTIONS_TABLE = process.env.CONNECTIONS_TABLE;
 const DEFAULT_KNOWLEDGE_BASE_ID = process.env.DEFAULT_KNOWLEDGE_BASE_ID;
 const DOCS_BUCKET_NAME = process.env.DOCS_BUCKET_NAME;
 const MODEL_PROVIDER = process.env.MODEL_PROVIDER || 'bedrock';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
 const HISTORY_LIMIT = 20;
+
+const SYSTEM_GROUPS = ['RootAdmin', 'TenantAdmin'];
 
 const postToConnection = async (apiGw, connectionId, data) => {
   await apiGw.send(new PostToConnectionCommand({
@@ -69,39 +72,88 @@ async function getHistory(tenantUser) {
 export const handler = async (event) => {
   const body = JSON.parse(event.body || '{}');
   const prompt = body.text || body.data?.prompt;
-  const user = body.user || 'anonymous';
-  const tenantId = body.tenantId || 'default';
-  const tenantUser = `${tenantId}#${user}`;
   const connectionId = event.requestContext.connectionId;
   const endpoint = `https://${event.requestContext.domainName}/${event.requestContext.stage}`;
   const apiGw = new ApiGatewayManagementApiClient({ endpoint });
+
+  // Fetch authoritative connection record — don't trust client-supplied body for identity
+  let tenantId = body.tenantId || 'default';
+  let userGroups = [];
+  let userEmail = body.user || 'anonymous';
+
+  if (CONNECTIONS_TABLE) {
+    try {
+      const connItem = await dynamo.send(new GetItemCommand({
+        TableName: CONNECTIONS_TABLE,
+        Key: { connectionId: { S: connectionId } },
+      }));
+      if (connItem.Item) {
+        tenantId = connItem.Item.tenantId?.S || tenantId;
+        userGroups = (connItem.Item.groups?.L || []).map(g => g.S);
+        userEmail = connItem.Item.email?.S || userEmail;
+      }
+    } catch (err) {
+      console.warn('Failed to fetch connection record, falling back to body values:', err.message);
+    }
+  }
+
+  const user = userEmail;
+  const tenantUser = `${tenantId}#${user}`;
+
+  const isAdmin = userGroups.some(g => SYSTEM_GROUPS.includes(g));
+  const businessGroups = userGroups.filter(g => !SYSTEM_GROUPS.includes(g));
 
   try {
     await saveMessage(tenantUser, 'user', prompt);
 
     const { knowledgeBaseId, docsPrefix } = await getTenantKb(tenantId);
     let context = '';
+    let retrievalResults = [];
+
     if (knowledgeBaseId) {
       try {
         const sourcePrefix = docsPrefix && DOCS_BUCKET_NAME
           ? `s3://${DOCS_BUCKET_NAME}/${docsPrefix}`
           : null;
 
-        // Try with source URI filter first; fall back to unfiltered if filter throws or returns 0 results
-        let retrievalResults = [];
         if (sourcePrefix) {
           try {
+            // Build filter: tenant isolation + optional group filter for non-admin users
+            let filter;
+            const tenantFilter = { startsWith: { key: 'x-amz-bedrock-kb-source-uri', value: sourcePrefix } };
+
+            if (!isAdmin && businessGroups.length > 0) {
+              filter = {
+                andAll: [
+                  tenantFilter,
+                  { orAll: businessGroups.map(g => ({ listContains: { key: 'groups', value: g } })) },
+                ],
+              };
+            } else {
+              filter = tenantFilter;
+            }
+
             const resp = await bedrockAgentClient.send(new RetrieveCommand({
               knowledgeBaseId,
               retrievalQuery: { text: prompt },
               retrievalConfiguration: {
-                vectorSearchConfiguration: {
-                  numberOfResults: 5,
-                  filter: { startsWith: { key: 'x-amz-bedrock-kb-source-uri', value: sourcePrefix } },
-                },
+                vectorSearchConfiguration: { numberOfResults: 5, filter },
               },
             }));
             retrievalResults = resp.retrievalResults || [];
+
+            // If group-filtered query returned 0 results, retry without group filter
+            // so untagged (legacy) documents remain accessible
+            if (retrievalResults.length === 0 && !isAdmin && businessGroups.length > 0) {
+              const fallbackResp = await bedrockAgentClient.send(new RetrieveCommand({
+                knowledgeBaseId,
+                retrievalQuery: { text: prompt },
+                retrievalConfiguration: {
+                  vectorSearchConfiguration: { numberOfResults: 5, filter: tenantFilter },
+                },
+              }));
+              retrievalResults = fallbackResp.retrievalResults || [];
+            }
           } catch (filterErr) {
             console.warn('RAG filter query failed, retrying without filter:', filterErr.message);
           }
@@ -207,6 +259,17 @@ export const handler = async (event) => {
     }
 
     await postToConnection(apiGw, connectionId, { type: 'end' });
+
+    // Send citations for the sources used in this response
+    if (retrievalResults.length > 0) {
+      const citations = retrievalResults.slice(0, 5).map(r => ({
+        source: r.location?.s3Location?.uri || '',
+        score: r.score ?? 0,
+        excerpt: (r.content?.text || '').slice(0, 200),
+      }));
+      await postToConnection(apiGw, connectionId, { type: 'citations', citations });
+    }
+
     return { statusCode: 200, body: 'OK' };
   } catch (err) {
     console.error('Chat error:', err);

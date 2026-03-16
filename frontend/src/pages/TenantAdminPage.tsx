@@ -1,13 +1,19 @@
-import { useState, useEffect } from 'react';
-import { Table, Button, Form, Input, Drawer, Space, Typography, message, Tag, Popconfirm, Upload } from 'antd';
+import { useState, useEffect, useRef } from 'react';
+import { Table, Button, Form, Input, Drawer, Space, Typography, message, Tag, Popconfirm, Upload, Select } from 'antd';
 import type { UploadProps } from 'antd';
 import { PlusOutlined, UserOutlined, DeleteOutlined, UploadOutlined, InboxOutlined } from '@ant-design/icons';
 import { useAuth } from '../auth/AuthContext';
 import { adminApiUrl } from '../config';
 
 const { Dragger } = Upload;
-
 const { Title, Text } = Typography;
+
+const BUSINESS_GROUPS = [
+  'financial', 'accounting', 'operations', 'marketing', 'IT',
+  'warehouse', 'security', 'logistics', 'sales',
+];
+
+const GROUP_OPTIONS = BUSINESS_GROUPS.map(g => ({ label: g, value: g }));
 
 interface TenantUser {
   username: string;
@@ -31,6 +37,8 @@ export default function TenantAdminPage() {
   const [uploadDrawerOpen, setUploadDrawerOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm();
+  const uploadGroupsRef = useRef<string[]>([]);
+  const [uploadGroups, setUploadGroups] = useState<string[]>([]);
 
   const fetchUsers = async () => {
     if (!adminApiUrl || adminApiUrl.startsWith('REPLACE')) {
@@ -57,13 +65,17 @@ export default function TenantAdminPage() {
     fetchUsers();
   }, [idToken, tenantId]);
 
-  const handleCreate = async (values: { email: string; temporaryPassword: string }) => {
+  const handleCreate = async (values: { email: string; temporaryPassword: string; businessGroups?: string[] }) => {
     setSubmitting(true);
     try {
       const res = await fetch(`${adminApiUrl}/tenants/${encodeURIComponent(tenantId)}/users`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ email: values.email.trim(), temporaryPassword: values.temporaryPassword }),
+        body: JSON.stringify({
+          email: values.email.trim(),
+          temporaryPassword: values.temporaryPassword,
+          businessGroups: values.businessGroups ?? [],
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || res.statusText);
@@ -99,15 +111,16 @@ export default function TenantAdminPage() {
     multiple: true,
     customRequest: async ({ file, onSuccess, onError, onProgress }) => {
       const f = file as File;
+      const currentGroups = uploadGroupsRef.current;
       try {
         const res = await fetch(`${adminApiUrl}/tenants/${encodeURIComponent(tenantId)}/upload-url`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
-          body: JSON.stringify({ filename: f.name }),
+          body: JSON.stringify({ filename: f.name, groups: currentGroups }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || res.statusText);
-        const { url } = data;
+        const { url, metadataUrl } = data;
 
         await new Promise<void>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
@@ -115,7 +128,7 @@ export default function TenantAdminPage() {
             if (e.lengthComputable) onProgress?.({ percent: Math.round((e.loaded / e.total) * 100) });
           };
           xhr.onload = () => {
-            if (xhr.status === 200 || xhr.status === 204) { onSuccess?.(null); resolve(); }
+            if (xhr.status === 200 || xhr.status === 204) resolve();
             else reject(new Error(`S3 upload failed: ${xhr.status}`));
           };
           xhr.onerror = () => reject(new Error('Network error'));
@@ -123,6 +136,18 @@ export default function TenantAdminPage() {
           xhr.setRequestHeader('Content-Type', f.type || 'application/octet-stream');
           xhr.send(f);
         });
+
+        // Upload metadata file with group tags
+        if (metadataUrl && currentGroups.length > 0) {
+          const metadata = JSON.stringify({ metadataAttributes: { groups: currentGroups } });
+          await fetch(metadataUrl, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: metadata,
+          });
+        }
+
+        onSuccess?.(null);
       } catch (e) {
         onError?.(e as Error);
       }
@@ -201,6 +226,7 @@ export default function TenantAdminPage() {
         bordered
       />
 
+      {/* Upload Documents Drawer */}
       <Drawer
         title={<span style={{ color: '#fff', fontWeight: 700 }}>Upload documents</span>}
         placement="right"
@@ -213,9 +239,27 @@ export default function TenantAdminPage() {
           body: { paddingTop: 24 },
         }}
       >
-        <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+        <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
           Files will be uploaded to the <strong>{tenantId}</strong> knowledge base folder and indexed automatically.
         </Text>
+        <div style={{ marginBottom: 16 }}>
+          <Text strong style={{ display: 'block', marginBottom: 6 }}>Access groups</Text>
+          <Select
+            mode="multiple"
+            options={GROUP_OPTIONS}
+            value={uploadGroups}
+            onChange={(vals) => {
+              setUploadGroups(vals);
+              uploadGroupsRef.current = vals;
+            }}
+            placeholder="Select groups that can access these documents"
+            style={{ width: '100%' }}
+            allowClear
+          />
+          <Text type="secondary" style={{ fontSize: 12, marginTop: 4, display: 'block' }}>
+            Leave empty to make documents accessible to all groups.
+          </Text>
+        </div>
         <Dragger {...uploadProps}>
           <p className="ant-upload-drag-icon">
             <InboxOutlined style={{ color: '#1e3a5f', fontSize: 48 }} />
@@ -225,6 +269,7 @@ export default function TenantAdminPage() {
         </Dragger>
       </Drawer>
 
+      {/* Add User Drawer */}
       <Drawer
         title={<span style={{ color: '#fff', fontWeight: 700 }}>Add user</span>}
         placement="right"
@@ -250,6 +295,14 @@ export default function TenantAdminPage() {
           </Form.Item>
           <Form.Item name="temporaryPassword" label="Temporary password" rules={[{ required: true, min: 8, message: 'Min 8 characters' }]}>
             <Input.Password placeholder="Min 8 characters" />
+          </Form.Item>
+          <Form.Item name="businessGroups" label="Business groups">
+            <Select
+              mode="multiple"
+              options={GROUP_OPTIONS}
+              placeholder="Select business groups (optional)"
+              allowClear
+            />
           </Form.Item>
         </Form>
       </Drawer>

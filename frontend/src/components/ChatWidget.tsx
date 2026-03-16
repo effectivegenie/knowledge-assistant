@@ -1,10 +1,68 @@
 import { useRef, useEffect, useState, useCallback, KeyboardEvent } from 'react';
-import { Avatar, Button, Input, Typography } from 'antd';
-import { SendOutlined, UserOutlined, DeleteOutlined } from '@ant-design/icons';
+import { Avatar, Button, Input, Typography, Collapse, Badge } from 'antd';
+import { SendOutlined, UserOutlined, DeleteOutlined, FileTextOutlined } from '@ant-design/icons';
 import { useWebSocket } from '../hooks/useWebSocket';
+import type { Citation } from '../hooks/useWebSocket';
 
 const { Text, Title } = Typography;
 const { TextArea } = Input;
+
+function getFilename(s3Uri: string): string {
+  return s3Uri.split('/').pop() || s3Uri;
+}
+
+function CitationsPanel({ citations }: { citations: Citation[] }) {
+  if (!citations || citations.length === 0) return null;
+
+  const items = [
+    {
+      key: 'sources',
+      label: (
+        <span style={{ fontSize: 12, color: '#666' }}>
+          <FileTextOutlined style={{ marginRight: 6 }} />
+          Sources ({citations.length})
+        </span>
+      ),
+      children: (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {citations.map((c, i) => (
+            <div
+              key={i}
+              style={{
+                background: '#f9fafb',
+                borderRadius: 6,
+                padding: '8px 10px',
+                border: '1px solid #e8e8e8',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <Text strong style={{ fontSize: 12 }}>{getFilename(c.source)}</Text>
+                <Badge
+                  count={`${Math.round(c.score * 100)}%`}
+                  style={{ backgroundColor: '#1e3a5f', fontSize: 10 }}
+                />
+              </div>
+              {c.excerpt && (
+                <Text type="secondary" style={{ fontSize: 11, lineHeight: 1.4 }}>
+                  {c.excerpt}
+                </Text>
+              )}
+            </div>
+          ))}
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <Collapse
+      size="small"
+      items={items}
+      style={{ marginTop: 6, border: 'none', background: 'transparent' }}
+      styles={{ header: { padding: '4px 0', background: 'transparent' } }}
+    />
+  );
+}
 
 export default function ChatWidget() {
   const { messages, isConnected, sendMessage, clearMessages } = useWebSocket();
@@ -94,6 +152,7 @@ export default function ChatWidget() {
                   msg.role === 'user' ? 'flex-end' : 'flex-start',
                 alignItems: 'flex-start',
                 gap: 8,
+                marginBottom: 4,
               }}
             >
               {msg.role === 'assistant' && (
@@ -108,26 +167,31 @@ export default function ChatWidget() {
                   }}
                 />
               )}
-              <div
-                className={`message-bubble ${
-                  msg.role === 'user' ? 'message-user' : 'message-assistant'
-                }`}
-              >
-                {msg.role === 'assistant' &&
-                msg.isStreaming &&
-                msg.content === '' ? (
-                  <div className="typing-indicator">
-                    <span />
-                    <span />
-                    <span />
-                  </div>
-                ) : (
-                  <>
-                    {msg.content}
-                    {msg.role === 'assistant' && msg.isStreaming && (
-                      <span className="blinking-cursor" />
-                    )}
-                  </>
+              <div style={{ maxWidth: msg.role === 'assistant' ? '75%' : undefined }}>
+                <div
+                  className={`message-bubble ${
+                    msg.role === 'user' ? 'message-user' : 'message-assistant'
+                  }`}
+                >
+                  {msg.role === 'assistant' &&
+                  msg.isStreaming &&
+                  msg.content === '' ? (
+                    <div className="typing-indicator">
+                      <span />
+                      <span />
+                      <span />
+                    </div>
+                  ) : (
+                    <>
+                      {msg.content}
+                      {msg.role === 'assistant' && msg.isStreaming && (
+                        <span className="blinking-cursor" />
+                      )}
+                    </>
+                  )}
+                </div>
+                {msg.role === 'assistant' && msg.citations && msg.citations.length > 0 && (
+                  <CitationsPanel citations={msg.citations} />
                 )}
               </div>
               {msg.role === 'user' && (

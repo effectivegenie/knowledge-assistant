@@ -1,3 +1,6 @@
+// JWT verification tests have been moved to verifyJwt.test.mjs
+// This file tests the connect handler's response to missing/invalid tokens.
+
 import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('@aws-sdk/client-dynamodb', () => ({
@@ -8,40 +11,22 @@ vi.mock('@aws-sdk/lib-dynamodb', () => ({
   PutCommand: vi.fn(),
 }));
 
-import { decodeJwtPayload } from '../index.mjs';
+import { handler } from '../index.mjs';
 
-// Helper: build a minimal fake JWT with the given payload
-function makeJwt(payload) {
-  const header = Buffer.from(JSON.stringify({ alg: 'RS256' })).toString('base64url');
-  const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  return `${header}.${body}.fakesig`;
-}
-
-describe('decodeJwtPayload', () => {
-  it('decodes a valid JWT payload', () => {
-    const payload = { sub: 'user-123', email: 'user@example.com', exp: 9999999999 };
-    const result = decodeJwtPayload(makeJwt(payload));
-    expect(result.sub).toBe('user-123');
-    expect(result.email).toBe('user@example.com');
+describe('connect handler — token guard', () => {
+  it('returns 401 when no token is supplied', async () => {
+    const event = { queryStringParameters: {} };
+    const res = await handler(event);
+    expect(res.statusCode).toBe(401);
   });
 
-  it('decodes custom:tenantId claim', () => {
-    const payload = { 'custom:tenantId': 'acme', sub: 'u1' };
-    const result = decodeJwtPayload(makeJwt(payload));
-    expect(result['custom:tenantId']).toBe('acme');
-  });
-
-  it('decodes cognito:groups claim', () => {
-    const payload = { 'cognito:groups': ['RootAdmin'], sub: 'u1' };
-    const result = decodeJwtPayload(makeJwt(payload));
-    expect(result['cognito:groups']).toEqual(['RootAdmin']);
-  });
-
-  it('throws on malformed token (no dots)', () => {
-    expect(() => decodeJwtPayload('notajwt')).toThrow();
-  });
-
-  it('throws on invalid base64 payload', () => {
-    expect(() => decodeJwtPayload('header.!!!.sig')).toThrow();
+  it('returns 401 when token is a plaintext string (not a JWT)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ keys: [] }),
+    }));
+    const event = { queryStringParameters: { token: 'notajwt' } };
+    const res = await handler(event);
+    expect(res.statusCode).toBe(401);
   });
 });

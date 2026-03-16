@@ -1,4 +1,4 @@
-import { CognitoIdentityProviderClient, ListUsersCommand, AdminCreateUserCommand, AdminDeleteUserCommand } from '@aws-sdk/client-cognito-identity-provider';
+import { CognitoIdentityProviderClient, ListUsersCommand, AdminCreateUserCommand, AdminAddUserToGroupCommand, AdminDeleteUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
@@ -7,6 +7,11 @@ const s3 = new S3Client({});
 
 const USER_POOL_ID      = process.env.USER_POOL_ID;
 const DOCS_BUCKET_NAME  = process.env.DOCS_BUCKET_NAME;
+
+const BUSINESS_GROUPS = [
+  'financial', 'accounting', 'operations', 'marketing', 'IT',
+  'warehouse', 'security', 'logistics', 'sales',
+];
 
 function parseBody(event) {
   try { return event.body ? JSON.parse(event.body) : {}; } catch { return {}; }
@@ -51,14 +56,28 @@ export const handler = async (event) => {
 
   // ── POST /tenants/{tenantId}/upload-url ───────────────────────────────────
   if (method === 'POST' && path.endsWith('/upload-url')) {
-    const { filename } = parseBody(event);
+    const { filename, groups } = parseBody(event);
     if (!filename) return jsonResponse(400, { error: 'Missing filename' });
     if (!DOCS_BUCKET_NAME) return jsonResponse(500, { error: 'Upload not configured' });
+
+    // Validate requested groups
+    const docGroups = Array.isArray(groups) ? groups : [];
+    const invalidGroups = docGroups.filter(g => !BUSINESS_GROUPS.includes(g));
+    if (invalidGroups.length > 0) {
+      return jsonResponse(400, { error: `Invalid groups: ${invalidGroups.join(', ')}` });
+    }
+
     const safeFilename = String(filename).replace(/[^a-zA-Z0-9._\-\s]/g, '_').trim();
     const key = `${tenantIdFromPath}/${safeFilename}`;
+    const metadataKey = `${key}.metadata.json`;
     try {
       const url = await getSignedUrl(s3, new PutObjectCommand({ Bucket: DOCS_BUCKET_NAME, Key: key }), { expiresIn: 300 });
-      return jsonResponse(200, { url, key });
+      const metadataUrl = await getSignedUrl(
+        s3,
+        new PutObjectCommand({ Bucket: DOCS_BUCKET_NAME, Key: metadataKey, ContentType: 'application/json' }),
+        { expiresIn: 300 },
+      );
+      return jsonResponse(200, { url, metadataUrl, key });
     } catch (err) {
       console.error('Presign error:', err);
       return jsonResponse(500, { error: 'Failed to generate upload URL' });
@@ -82,8 +101,15 @@ export const handler = async (event) => {
 
   // ── POST /tenants/{tenantId}/users ────────────────────────────────────────
   if (method === 'POST' && !pathParams.username) {
-    const { email, temporaryPassword } = parseBody(event);
+    const { email, temporaryPassword, businessGroups } = parseBody(event);
     if (!email || !temporaryPassword) return jsonResponse(400, { error: 'Missing email or temporaryPassword' });
+
+    const requestedGroups = Array.isArray(businessGroups) ? businessGroups : [];
+    const invalidGroups = requestedGroups.filter(g => !BUSINESS_GROUPS.includes(g));
+    if (invalidGroups.length > 0) {
+      return jsonResponse(400, { error: `Invalid business groups: ${invalidGroups.join(', ')}` });
+    }
+
     try {
       await cognito.send(new AdminCreateUserCommand({
         UserPoolId: USER_POOL_ID,
@@ -96,7 +122,14 @@ export const handler = async (event) => {
         ],
         MessageAction: 'SUPPRESS',
       }));
-      return jsonResponse(200, { email, tenantId: tenantIdFromPath });
+      for (const group of requestedGroups) {
+        await cognito.send(new AdminAddUserToGroupCommand({
+          UserPoolId: USER_POOL_ID,
+          Username: email,
+          GroupName: group,
+        }));
+      }
+      return jsonResponse(200, { email, tenantId: tenantIdFromPath, businessGroups: requestedGroups });
     } catch (err) {
       console.error('Cognito create user error:', err);
       return jsonResponse(400, { error: 'Failed to create user', detail: err.message });

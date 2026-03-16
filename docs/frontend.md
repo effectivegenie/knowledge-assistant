@@ -82,6 +82,24 @@ const { messages, isConnected, sendMessage, clearMessages, historyLoaded } = use
 3. On close: exponential backoff reconnect (1s → 2s → 4s → ... → 30s max)
 4. Closes cleanly on unmount or when `idToken` becomes null
 
+**`ChatMessage` type:**
+
+```ts
+interface Citation {
+  source: string;   // S3 URI
+  score: number;    // Bedrock relevance score 0–1
+  excerpt: string;  // First 200 chars of retrieved chunk
+}
+
+interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  isStreaming?: boolean;
+  citations?: Citation[];
+}
+```
+
 **Message types received:**
 
 | Type | Behaviour |
@@ -89,6 +107,7 @@ const { messages, isConnected, sendMessage, clearMessages, historyLoaded } = use
 | `history` | Restores previous messages from DynamoDB |
 | `chunk` | Appends text to the last streaming assistant message |
 | `end` | Marks the last assistant message as done streaming |
+| `citations` | Attaches source citations to the last completed assistant message |
 | `error` | Appends error text to the last assistant message |
 
 ## Pages
@@ -121,10 +140,13 @@ Root admin interface (RootAdmin only).
 Tenant admin interface (TenantAdmin + RootAdmin).
 
 - User table for the current tenant
-- **Add User Drawer**: `email`, `temporaryPassword`
+- **Add User Drawer**: `email`, `temporaryPassword`, `businessGroups` (multi-select, optional)
+  - `businessGroups` are passed to `POST /tenants/{id}/users` and assigned in Cognito
 - **Upload Documents Drawer**: Ant Design `Dragger` with `customRequest`
-  - Calls `POST /tenants/{id}/upload-url` → receives presigned S3 URL
+  - Group selector (multi-select) at the top — controls which business groups can access the uploaded documents
+  - Calls `POST /tenants/{id}/upload-url` with `{ filename, groups }` → receives `{ url, metadataUrl, key }`
   - PUTs file directly to S3 with XHR (tracks upload progress)
+  - PUTs metadata JSON `{ metadataAttributes: { groups } }` to `metadataUrl`
   - Supports multiple files, drag-and-drop
 
 ## Components
@@ -137,6 +159,7 @@ Main chat interface.
 - Renders message bubbles: user (right, `#dce7f3` background) and assistant (left, logo avatar 60px)
 - Streaming: assistant bubble grows as `chunk` events arrive; blinking cursor shown during streaming
 - Typing indicator (3-dot bounce) shown while assistant bubble is empty and streaming
+- **Citations**: after streaming ends, a collapsible "Sources" panel appears below each assistant message that has citations. Shows filename (from S3 URI), relevance score badge, and short excerpt.
 - Input: `TextArea` (auto-resize 1–4 rows), `Enter` to send, `Shift+Enter` for newline
 - Clear button (`DeleteOutlined`) appears once messages exist
 

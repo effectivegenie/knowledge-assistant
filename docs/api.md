@@ -115,15 +115,18 @@ Create a new user in the tenant. **RootAdmin** or **TenantAdmin of that tenant**
 ```json
 {
   "email": "user@acme.com",
-  "temporaryPassword": "TempPass1"
+  "temporaryPassword": "TempPass1",
+  "businessGroups": ["financial", "IT"]
 }
 ```
+
+`businessGroups` is optional. Valid values: `financial`, `accounting`, `operations`, `marketing`, `IT`, `warehouse`, `security`, `logistics`, `sales`. Returns 400 for unknown group names.
 
 The user is created with `MessageAction: SUPPRESS` (no welcome email). The user must change their password on first login.
 
 **Response 200**
 ```json
-{ "email": "user@acme.com", "tenantId": "acme" }
+{ "email": "user@acme.com", "tenantId": "acme", "businessGroups": ["financial", "IT"] }
 ```
 
 ---
@@ -143,12 +146,17 @@ Permanently delete a Cognito user. **RootAdmin** or **TenantAdmin of that tenant
 
 ### `POST /tenants/{tenantId}/upload-url`
 
-Generate a presigned S3 PUT URL for direct browser-to-S3 upload. **RootAdmin** or **TenantAdmin of that tenant**.
+Generate presigned S3 PUT URLs for direct browser-to-S3 upload (document + metadata). **RootAdmin** or **TenantAdmin of that tenant**.
 
 **Request body**
 ```json
-{ "filename": "product-manual.pdf" }
+{
+  "filename": "product-manual.pdf",
+  "groups": ["financial", "IT"]
+}
 ```
+
+`groups` is optional. When provided, documents are tagged with access groups — only users in those groups will see them in RAG results. Valid group names: `financial`, `accounting`, `operations`, `marketing`, `IT`, `warehouse`, `security`, `logistics`, `sales`.
 
 Filenames are sanitised: characters outside `[a-zA-Z0-9._\-\s]` are replaced with `_`.
 
@@ -156,20 +164,20 @@ Filenames are sanitised: characters outside `[a-zA-Z0-9._\-\s]` are replaced wit
 ```json
 {
   "url": "https://s3.amazonaws.com/...?X-Amz-Signature=...",
+  "metadataUrl": "https://s3.amazonaws.com/...product-manual.pdf.metadata.json?...",
   "key": "acme/product-manual.pdf"
 }
 ```
 
-The URL expires in 5 minutes. Use it with a `PUT` request:
+Both URLs expire in 5 minutes. Upload workflow:
 
-```http
-PUT <url>
-Content-Type: application/pdf
+1. `PUT <url>` with document bytes (Content-Type: application/pdf or appropriate MIME type)
+2. `PUT <metadataUrl>` with JSON body (Content-Type: application/json):
+   ```json
+   { "metadataAttributes": { "groups": ["financial", "IT"] } }
+   ```
 
-<binary file data>
-```
-
-After a successful upload, the S3 event automatically triggers a Bedrock ingestion job.
+The metadata file enables Bedrock KB group filtering. After a successful upload, the S3 event automatically triggers a Bedrock ingestion job.
 
 ---
 

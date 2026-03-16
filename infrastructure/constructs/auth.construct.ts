@@ -60,6 +60,25 @@ export class AuthConstruct extends Construct {
       description: 'Tenant admin; can manage users in their tenant',
     });
 
+    const businessGroups = [
+      { id: 'financial',   description: 'Financial department' },
+      { id: 'accounting',  description: 'Accounting department' },
+      { id: 'operations',  description: 'Operations department' },
+      { id: 'marketing',   description: 'Marketing department' },
+      { id: 'IT',          description: 'IT department' },
+      { id: 'warehouse',   description: 'Warehouse department' },
+      { id: 'security',    description: 'Security department' },
+      { id: 'logistics',   description: 'Logistics department' },
+      { id: 'sales',       description: 'Sales department' },
+    ];
+    for (const g of businessGroups) {
+      new cognito.CfnUserPoolGroup(this, `BusinessGroup${g.id.charAt(0).toUpperCase() + g.id.slice(1)}`, {
+        userPoolId: this.userPool.userPoolId,
+        groupName: g.id,
+        description: g.description,
+      });
+    }
+
     this.userPoolClient = this.userPool.addClient('WebClient', {
       authFlows: { userSrp: true },
       generateSecret: false,

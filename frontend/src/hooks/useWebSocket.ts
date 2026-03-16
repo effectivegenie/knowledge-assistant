@@ -2,18 +2,26 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { config } from '../config';
 
+export interface Citation {
+  source: string;
+  score: number;
+  excerpt: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   isStreaming?: boolean;
+  citations?: Citation[];
 }
 
 interface WebSocketMessage {
-  type: 'chunk' | 'end' | 'error' | 'history';
+  type: 'chunk' | 'end' | 'error' | 'history' | 'citations';
   content?: string;
   message?: string;
   messages?: { role: string; text: string; timestamp: string }[];
+  citations?: Citation[];
 }
 
 export function useWebSocket() {
@@ -102,6 +110,17 @@ export function useWebSocket() {
             for (let i = updated.length - 1; i >= 0; i--) {
               if (updated[i].role === 'assistant' && updated[i].isStreaming) {
                 updated[i] = { ...updated[i], isStreaming: false };
+                break;
+              }
+            }
+            return updated;
+          });
+        } else if (data.type === 'citations') {
+          setMessages((prev) => {
+            const updated = [...prev];
+            for (let i = updated.length - 1; i >= 0; i--) {
+              if (updated[i].role === 'assistant' && !updated[i].isStreaming) {
+                updated[i] = { ...updated[i], citations: data.citations ?? [] };
                 break;
               }
             }

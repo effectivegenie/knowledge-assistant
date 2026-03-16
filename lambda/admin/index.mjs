@@ -16,6 +16,10 @@ const DEFAULT_DATA_SOURCE_ID   = process.env.DEFAULT_DATA_SOURCE_ID;
 const DOCS_BUCKET_ARN          = process.env.DOCS_BUCKET_ARN;
 const DOCS_BUCKET_NAME         = process.env.DOCS_BUCKET_NAME;
 const TENANT_ADMIN_GROUP       = 'TenantAdmin';
+const BUSINESS_GROUPS = [
+  'financial', 'accounting', 'operations', 'marketing', 'IT',
+  'warehouse', 'security', 'logistics', 'sales',
+];
 
 function parseBody(event) {
   try { return event.body ? JSON.parse(event.body) : {}; } catch { return {}; }
@@ -123,6 +127,14 @@ export const handler = async (event) => {
         Username: adminEmail,
         GroupName: TENANT_ADMIN_GROUP,
       }));
+      // Assign all business groups to the tenant admin user
+      for (const group of BUSINESS_GROUPS) {
+        await cognito.send(new AdminAddUserToGroupCommand({
+          UserPoolId: USER_POOL_ID,
+          Username: adminEmail,
+          GroupName: group,
+        }));
+      }
     } catch (err) {
       console.error('Cognito create user error:', err);
       return jsonResponse(400, { error: 'Failed to create tenant admin user', detail: err.message });
