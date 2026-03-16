@@ -64,7 +64,7 @@ export const handler = async (event) => {
 
   if (!tenantIdFromPath) return jsonResponse(404, { error: 'Not found' });
   if (!isRootAdmin && (!isTenantAdmin || userTenantId !== tenantIdFromPath)) {
-    return jsonResponse(403, { error: 'Forbidden', detail: { userTenantId, tenantIdFromPath, isTenantAdmin, isRootAdmin } });
+    return jsonResponse(403, { error: 'Forbidden', detail: { userTenantId, tenantIdFromPath, isTenantAdmin, isRootAdmin, groups } });
   }
 
   // ── POST /tenants/{tenantId}/upload-url ───────────────────────────────────
