@@ -1,5 +1,5 @@
 import { CognitoIdentityProviderClient, ListUsersCommand, AdminCreateUserCommand, AdminAddUserToGroupCommand, AdminRemoveUserFromGroupCommand, AdminListGroupsForUserCommand, AdminDeleteUserCommand } from '@aws-sdk/client-cognito-identity-provider';
-import { S3Client, PutObjectCommand, ListObjectsV2Command, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 const cognito = new CognitoIdentityProviderClient({});
@@ -260,62 +260,6 @@ export const handler = async (event) => {
       log.error('Failed to delete tenant user', { username, tenantId: tenantIdFromPath, error: err.message });
       return jsonResponse(400, { error: 'Failed to delete user', detail: err.message });
     }
-  }
-
-  // ── POST /tenants/{tenantId}/migrate-metadata ─────────────────────────────
-  if (method === 'POST' && path.endsWith('/migrate-metadata')) {
-    if (!DOCS_BUCKET_NAME) return jsonResponse(500, { error: 'Bucket not configured' });
-    log.info('Metadata migration started', { tenantId: tenantIdFromPath });
-
-    // List all non-metadata objects in the tenant prefix
-    const objects = [];
-    let continuationToken;
-    try {
-      do {
-        const listRes = await s3.send(new ListObjectsV2Command({
-          Bucket: DOCS_BUCKET_NAME,
-          Prefix: `${tenantIdFromPath}/`,
-          ContinuationToken: continuationToken,
-        }));
-        const docs = (listRes.Contents || []).filter(o =>
-          !o.Key.endsWith('.metadata.json') && !o.Key.endsWith('/')
-        );
-        objects.push(...docs);
-        continuationToken = listRes.IsTruncated ? listRes.NextContinuationToken : undefined;
-      } while (continuationToken);
-    } catch (err) {
-      log.error('Failed to list S3 objects for migration', { tenantId: tenantIdFromPath, error: err.message });
-      return jsonResponse(500, { error: 'Failed to list documents' });
-    }
-
-    // Create metadata file for any document that doesn't have one yet.
-    // Putting a new .metadata.json triggers the S3 event → sync Lambda → ingestion job.
-    let migrated = 0;
-    for (const obj of objects) {
-      const metaKey = `${obj.Key}.metadata.json`;
-      let exists = false;
-      try {
-        await s3.send(new HeadObjectCommand({ Bucket: DOCS_BUCKET_NAME, Key: metaKey }));
-        exists = true;
-      } catch { /* not found */ }
-
-      if (!exists) {
-        try {
-          await s3.send(new PutObjectCommand({
-            Bucket: DOCS_BUCKET_NAME,
-            Key: metaKey,
-            ContentType: 'application/json',
-            Body: JSON.stringify({ metadataAttributes: { tenantId: tenantIdFromPath, groups: ['general'] } }),
-          }));
-          migrated++;
-        } catch (err) {
-          log.warn('Failed to write metadata for object (non-fatal)', { key: obj.Key, error: err.message });
-        }
-      }
-    }
-
-    log.info('Metadata migration complete', { tenantId: tenantIdFromPath, migrated, total: objects.length });
-    return jsonResponse(200, { migrated, total: objects.length });
   }
 
   return jsonResponse(404, { error: 'Not found' });
