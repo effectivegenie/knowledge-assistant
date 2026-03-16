@@ -33,6 +33,14 @@ Log levels:
 
 Never log sensitive data (passwords, raw JWT tokens, full prompt/response text).
 
+## Tables (UI)
+
+All data tables must be searchable and sortable:
+- Add a text `Input` with `SearchOutlined` prefix and `allowClear` above each table for client-side filtering
+- Add `sorter` functions on every text and date column
+- Use `pagination={{ pageSize: 20, hideOnSinglePage: true, showSizeChanger: false }}` instead of `pagination={false}`
+- If a backend pagination/search API exists, delegate to it; otherwise filter and sort client-side only
+
 ## Documentation
 
 When adding a significant new feature or performing refactoring, update the relevant files in `docs/`:

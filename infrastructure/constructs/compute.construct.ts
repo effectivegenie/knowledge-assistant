@@ -165,7 +165,8 @@ export class ComputeConstruct extends Construct {
     });
     this.tenantAdminFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['cognito-idp:ListUsers', 'cognito-idp:AdminCreateUser',
-                'cognito-idp:AdminAddUserToGroup', 'cognito-idp:AdminDeleteUser'],
+                'cognito-idp:AdminAddUserToGroup', 'cognito-idp:AdminRemoveUserFromGroup',
+                'cognito-idp:AdminListGroupsForUser', 'cognito-idp:AdminDeleteUser'],
       resources: [userPool.userPoolArn],
     }));
     docsBucket.grantPut(this.tenantAdminFn);

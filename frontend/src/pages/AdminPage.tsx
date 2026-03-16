@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Table, Button, Form, Input, Drawer, Space, Typography, message, Tag, Popconfirm } from 'antd';
-import { PlusOutlined, TeamOutlined, EditOutlined, DeleteOutlined, UserOutlined } from '@ant-design/icons';
+import { PlusOutlined, TeamOutlined, EditOutlined, DeleteOutlined, UserOutlined, SearchOutlined } from '@ant-design/icons';
 import { useAuth } from '../auth/AuthContext';
 import { adminApiUrl } from '../config';
 
@@ -41,6 +41,8 @@ export default function AdminPage() {
   const [createForm] = Form.useForm();
   const [editForm]   = Form.useForm();
 
+  const [tenantSearch, setTenantSearch] = useState('');
+
   // Users drawer state
   const [usersTenant, setUsersTenant]     = useState<Tenant | null>(null);
   const [users, setUsers]                 = useState<TenantUser[]>([]);
@@ -48,6 +50,7 @@ export default function AdminPage() {
   const [addUserOpen, setAddUserOpen]     = useState(false);
   const [userSubmitting, setUserSubmitting] = useState(false);
   const [userForm] = Form.useForm();
+  const [userSearch, setUserSearch] = useState('');
 
   const headers = { Authorization: `Bearer ${idToken}` };
 
@@ -146,6 +149,7 @@ export default function AdminPage() {
   const openUsers = async (tenant: Tenant) => {
     setUsersTenant(tenant);
     setUsers([]);
+    setUserSearch('');
     setUsersLoading(true);
     try {
       const res = await fetch(`${adminApiUrl}/tenants/${encodeURIComponent(tenant.tenantId)}/users`, { headers });
@@ -213,23 +217,36 @@ export default function AdminPage() {
     }
   };
 
+  const filteredTenants = tenants.filter(t => {
+    const q = tenantSearch.toLowerCase();
+    return !q || t.tenantId.toLowerCase().includes(q) || t.name.toLowerCase().includes(q);
+  });
+
+  const filteredUsers = users.filter(u => {
+    const q = userSearch.toLowerCase();
+    return !q || (u.email ?? '').toLowerCase().includes(q) || (u.status ?? '').toLowerCase().includes(q);
+  });
+
   const userColumns = [
     {
       title: 'Email',
       dataIndex: 'email',
       key: 'email',
+      sorter: (a: TenantUser, b: TenantUser) => (a.email ?? '').localeCompare(b.email ?? ''),
       render: (email: string) => <Text strong>{email}</Text>,
     },
     {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
+      sorter: (a: TenantUser, b: TenantUser) => (a.status ?? '').localeCompare(b.status ?? ''),
       render: (status: string) => <Tag color={STATUS_COLOR[status] ?? 'default'}>{status ?? '—'}</Tag>,
     },
     {
       title: 'Created',
       dataIndex: 'createdAt',
       key: 'createdAt',
+      sorter: (a: TenantUser, b: TenantUser) => new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime(),
       render: (t: string) => t ? new Date(t).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—',
     },
     {
@@ -256,18 +273,21 @@ export default function AdminPage() {
       title: 'Tenant ID',
       dataIndex: 'tenantId',
       key: 'tenantId',
+      sorter: (a: Tenant, b: Tenant) => a.tenantId.localeCompare(b.tenantId),
       render: (id: string) => <Tag color="blue">{id}</Tag>,
     },
     {
       title: 'Name',
       dataIndex: 'name',
       key: 'name',
+      sorter: (a: Tenant, b: Tenant) => a.name.localeCompare(b.name),
       render: (name: string) => <Text strong>{name}</Text>,
     },
     {
       title: 'Created',
       dataIndex: 'createdAt',
       key: 'createdAt',
+      sorter: (a: Tenant, b: Tenant) => new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime(),
       render: (t: string) => t ? new Date(t).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—',
     },
     {
@@ -306,7 +326,7 @@ export default function AdminPage() {
 
   return (
     <div style={{ padding: '24px 32px', height: '100%', overflow: 'auto' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <Space size={10}>
           <TeamOutlined style={{ fontSize: 22, color: '#1e3a5f' }} />
           <Title level={4} style={{ margin: 0, color: '#1e3a5f' }}>Tenants</Title>
@@ -316,12 +336,21 @@ export default function AdminPage() {
         </Button>
       </div>
 
+      <Input
+        prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />}
+        placeholder="Search by tenant ID or name…"
+        value={tenantSearch}
+        onChange={e => setTenantSearch(e.target.value)}
+        allowClear
+        style={{ marginBottom: 12, maxWidth: 320 }}
+      />
+
       <Table
         loading={loading}
-        dataSource={tenants}
+        dataSource={filteredTenants}
         rowKey="tenantId"
         columns={columns}
-        pagination={false}
+        pagination={{ pageSize: 20, hideOnSinglePage: true, showSizeChanger: false }}
         style={{ width: '100%' }}
         bordered
       />
@@ -396,7 +425,7 @@ export default function AdminPage() {
         }
         placement="right"
         open={!!usersTenant}
-        onClose={() => { setUsersTenant(null); setUsers([]); setAddUserOpen(false); userForm.resetFields(); }}
+        onClose={() => { setUsersTenant(null); setUsers([]); setAddUserOpen(false); userForm.resetFields(); setUserSearch(''); }}
         width={600}
         closeIcon={<span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 16 }}>✕</span>}
         styles={DRAWER_HEADER}
@@ -411,12 +440,20 @@ export default function AdminPage() {
           </Button>
         }
       >
+        <Input
+          prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />}
+          placeholder="Search by email or status…"
+          value={userSearch}
+          onChange={e => setUserSearch(e.target.value)}
+          allowClear
+          style={{ marginBottom: 12 }}
+        />
         <Table
           loading={usersLoading}
-          dataSource={users}
+          dataSource={filteredUsers}
           rowKey="username"
           columns={userColumns}
-          pagination={false}
+          pagination={{ pageSize: 20, hideOnSinglePage: true, showSizeChanger: false }}
           bordered
           size="small"
         />

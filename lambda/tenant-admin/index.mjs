@@ -1,4 +1,4 @@
-import { CognitoIdentityProviderClient, ListUsersCommand, AdminCreateUserCommand, AdminAddUserToGroupCommand, AdminDeleteUserCommand } from '@aws-sdk/client-cognito-identity-provider';
+import { CognitoIdentityProviderClient, ListUsersCommand, AdminCreateUserCommand, AdminAddUserToGroupCommand, AdminRemoveUserFromGroupCommand, AdminListGroupsForUserCommand, AdminDeleteUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
@@ -116,18 +116,34 @@ export const handler = async (event) => {
   }
 
   // ── GET /tenants/{tenantId}/users ─────────────────────────────────────────
-  if (method === 'GET') {
+  if (method === 'GET' && !pathParams.username) {
     log.info('Listing tenant users', { tenantId: tenantIdFromPath });
     const list = await cognito.send(new ListUsersCommand({ UserPoolId: USER_POOL_ID, Limit: 60 }));
     const attrs = (u) => (u.Attributes || []).reduce((acc, a) => ({ ...acc, [a.Name]: a.Value }), {});
-    const users = (list.Users || [])
-      .filter(u => attrs(u)['custom:tenantId'] === tenantIdFromPath)
-      .map(u => ({
-        username:  u.Username,
-        email:     attrs(u).email,
-        status:    u.UserStatus,
-        createdAt: u.UserCreateDate,
-      }));
+    const tenantUsers = (list.Users || []).filter(u => attrs(u)['custom:tenantId'] === tenantIdFromPath);
+
+    const users = await Promise.all(tenantUsers.map(async (u) => {
+      let businessGroups = [];
+      try {
+        const groupsResp = await cognito.send(new AdminListGroupsForUserCommand({
+          UserPoolId: USER_POOL_ID,
+          Username: u.Username,
+        }));
+        businessGroups = (groupsResp.Groups || [])
+          .map(g => g.GroupName)
+          .filter(g => BUSINESS_GROUPS.includes(g));
+      } catch (err) {
+        log.warn('Failed to fetch groups for user', { username: u.Username, error: err.message });
+      }
+      return {
+        username:       u.Username,
+        email:          attrs(u).email,
+        status:         u.UserStatus,
+        createdAt:      u.UserCreateDate,
+        businessGroups,
+      };
+    }));
+
     return jsonResponse(200, { users });
   }
 
@@ -169,8 +185,42 @@ export const handler = async (event) => {
     }
   }
 
-  // ── DELETE /tenants/{tenantId}/users/{username} ───────────────────────────
+  // ── PUT /tenants/{tenantId}/users/{username}/groups ───────────────────────
   const username = pathParams.username || path.match(/^\/tenants\/[^/]+\/users\/([^/]+)$/)?.[1];
+  if (method === 'PUT' && username) {
+    const { businessGroups } = parseBody(event);
+    const requestedGroups = Array.isArray(businessGroups) ? businessGroups : [];
+    const invalidGroups = requestedGroups.filter(g => !BUSINESS_GROUPS.includes(g));
+    if (invalidGroups.length > 0) {
+      return jsonResponse(400, { error: `Invalid business groups: ${invalidGroups.join(', ')}` });
+    }
+
+    try {
+      const groupsResp = await cognito.send(new AdminListGroupsForUserCommand({
+        UserPoolId: USER_POOL_ID,
+        Username: username,
+      }));
+      const currentGroups = (groupsResp.Groups || [])
+        .map(g => g.GroupName)
+        .filter(g => BUSINESS_GROUPS.includes(g));
+
+      const toAdd    = requestedGroups.filter(g => !currentGroups.includes(g));
+      const toRemove = currentGroups.filter(g => !requestedGroups.includes(g));
+
+      await Promise.all([
+        ...toAdd.map(g => cognito.send(new AdminAddUserToGroupCommand({ UserPoolId: USER_POOL_ID, Username: username, GroupName: g }))),
+        ...toRemove.map(g => cognito.send(new AdminRemoveUserFromGroupCommand({ UserPoolId: USER_POOL_ID, Username: username, GroupName: g }))),
+      ]);
+
+      log.info('User groups updated', { username, tenantId: tenantIdFromPath, added: toAdd, removed: toRemove });
+      return jsonResponse(200, { username, businessGroups: requestedGroups });
+    } catch (err) {
+      log.error('Failed to update user groups', { username, tenantId: tenantIdFromPath, error: err.message });
+      return jsonResponse(400, { error: 'Failed to update user groups', detail: err.message });
+    }
+  }
+
+  // ── DELETE /tenants/{tenantId}/users/{username} ───────────────────────────
   if (method === 'DELETE' && username) {
     try {
       await cognito.send(new AdminDeleteUserCommand({ UserPoolId: USER_POOL_ID, Username: username }));

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Table, Button, Form, Input, Drawer, Space, Typography, message, Tag, Popconfirm, Upload, Select } from 'antd';
 import type { UploadProps } from 'antd';
-import { PlusOutlined, UserOutlined, DeleteOutlined, UploadOutlined, InboxOutlined } from '@ant-design/icons';
+import { PlusOutlined, UserOutlined, DeleteOutlined, UploadOutlined, InboxOutlined, SearchOutlined, EditOutlined } from '@ant-design/icons';
 import { useAuth } from '../auth/AuthContext';
 import { adminApiUrl } from '../config';
 
@@ -27,6 +27,7 @@ interface TenantUser {
   email?: string;
   status?: string;
   createdAt?: string;
+  businessGroups?: string[];
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -40,10 +41,14 @@ export default function TenantAdminPage() {
   const tenantId = user?.tenantId ?? 'default';
   const [users, setUsers] = useState<TenantUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [userSearch, setUserSearch] = useState('');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [uploadDrawerOpen, setUploadDrawerOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm();
+  const [editUser, setEditUser] = useState<TenantUser | null>(null);
+  const [editGroupsSubmitting, setEditGroupsSubmitting] = useState(false);
+  const [editGroupsForm] = Form.useForm();
   const uploadGroupsRef = useRef<string[]>([]);
   const [uploadGroups, setUploadGroups] = useState<string[]>([]);
 
@@ -114,6 +119,35 @@ export default function TenantAdminPage() {
     }
   };
 
+  const openEditUser = (record: TenantUser) => {
+    setEditUser(record);
+    editGroupsForm.setFieldsValue({ businessGroups: record.businessGroups ?? [] });
+  };
+
+  const handleUpdateGroups = async (values: { businessGroups: string[] }) => {
+    if (!editUser) return;
+    setEditGroupsSubmitting(true);
+    try {
+      const res = await fetch(
+        `${adminApiUrl}/tenants/${encodeURIComponent(tenantId)}/users/${encodeURIComponent(editUser.username)}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+          body: JSON.stringify({ businessGroups: values.businessGroups ?? [] }),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      message.success('Groups updated');
+      setEditUser(null);
+      fetchUsers();
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : 'Failed to update groups');
+    } finally {
+      setEditGroupsSubmitting(false);
+    }
+  };
+
   const uploadProps: UploadProps = {
     multiple: true,
     customRequest: async ({ file, onSuccess, onError, onProgress }) => {
@@ -161,17 +195,24 @@ export default function TenantAdminPage() {
     },
   };
 
+  const filteredUsers = users.filter(u => {
+    const q = userSearch.toLowerCase();
+    return !q || (u.email ?? '').toLowerCase().includes(q) || (u.status ?? '').toLowerCase().includes(q);
+  });
+
   const columns = [
     {
       title: 'Email',
       dataIndex: 'email',
       key: 'email',
+      sorter: (a: TenantUser, b: TenantUser) => (a.email ?? '').localeCompare(b.email ?? ''),
       render: (email: string) => <Text strong>{email}</Text>,
     },
     {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
+      sorter: (a: TenantUser, b: TenantUser) => (a.status ?? '').localeCompare(b.status ?? ''),
       render: (status: string) => (
         <Tag color={STATUS_COLOR[status] ?? 'default'}>{status ?? '—'}</Tag>
       ),
@@ -180,23 +221,46 @@ export default function TenantAdminPage() {
       title: 'Created',
       dataIndex: 'createdAt',
       key: 'createdAt',
+      sorter: (a: TenantUser, b: TenantUser) => new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime(),
       render: (t: string) => t ? new Date(t).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—',
+    },
+    {
+      title: 'Groups',
+      dataIndex: 'businessGroups',
+      key: 'businessGroups',
+      render: (groups: string[] | undefined) => (
+        <Space size={4} wrap>
+          {(groups ?? []).length === 0
+            ? <Tag color="default">—</Tag>
+            : (groups ?? []).map(g => <Tag key={g} color="geekblue">{g}</Tag>)
+          }
+        </Space>
+      ),
     },
     {
       title: 'Actions',
       key: 'actions',
-      width: 80,
+      width: 90,
       render: (_: unknown, record: TenantUser) => (
-        <Popconfirm
-          title={`Delete user "${record.email || record.username}"?`}
-          description="The user will be permanently removed from Cognito."
-          onConfirm={() => handleDelete(record.username)}
-          okText="Delete"
-          okButtonProps={{ danger: true }}
-          cancelText="Cancel"
-        >
-          <Button type="text" icon={<DeleteOutlined />} danger />
-        </Popconfirm>
+        <Space size={4}>
+          <Button
+            type="text"
+            icon={<EditOutlined />}
+            onClick={() => openEditUser(record)}
+            style={{ color: '#1e3a5f' }}
+            title="Edit groups"
+          />
+          <Popconfirm
+            title={`Delete user "${record.email || record.username}"?`}
+            description="The user will be permanently removed from Cognito."
+            onConfirm={() => handleDelete(record.username)}
+            okText="Delete"
+            okButtonProps={{ danger: true }}
+            cancelText="Cancel"
+          >
+            <Button type="text" icon={<DeleteOutlined />} danger />
+          </Popconfirm>
+        </Space>
       ),
     },
   ];
@@ -223,12 +287,20 @@ export default function TenantAdminPage() {
         </Space>
       </div>
 
+      <Input
+        prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />}
+        placeholder="Search by email or status…"
+        value={userSearch}
+        onChange={e => setUserSearch(e.target.value)}
+        allowClear
+        style={{ marginBottom: 12, maxWidth: 320 }}
+      />
       <Table
         loading={loading}
-        dataSource={users}
+        dataSource={filteredUsers}
         rowKey="username"
         columns={columns}
-        pagination={false}
+        pagination={{ pageSize: 20, hideOnSinglePage: true, showSizeChanger: false }}
         style={{ width: '100%' }}
         bordered
       />
@@ -274,6 +346,41 @@ export default function TenantAdminPage() {
           <p className="ant-upload-text">Click or drag files to upload</p>
           <p className="ant-upload-hint">Supports PDF, DOCX, TXT, MD, HTML and other text documents. Multiple files allowed.</p>
         </Dragger>
+      </Drawer>
+
+      {/* Edit User Groups Drawer */}
+      <Drawer
+        title={<span style={{ color: '#fff', fontWeight: 700 }}>Edit groups</span>}
+        placement="right"
+        open={!!editUser}
+        onClose={() => { setEditUser(null); editGroupsForm.resetFields(); }}
+        width={360}
+        closeIcon={<span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 16 }}>✕</span>}
+        styles={{
+          header: { background: '#1e3a5f', borderBottom: '2px solid #e6a800', padding: '16px 20px' },
+          body: { paddingTop: 24 },
+          footer: { borderTop: '1px solid #f0f4fb' },
+        }}
+        footer={
+          <Space style={{ float: 'right' }}>
+            <Button onClick={() => { setEditUser(null); editGroupsForm.resetFields(); }}>Cancel</Button>
+            <Button type="primary" loading={editGroupsSubmitting} onClick={() => editGroupsForm.submit()}>Save</Button>
+          </Space>
+        }
+      >
+        <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+          User: <strong>{editUser?.email || editUser?.username}</strong>
+        </Text>
+        <Form form={editGroupsForm} layout="vertical" onFinish={handleUpdateGroups}>
+          <Form.Item name="businessGroups" label="Business groups">
+            <Select
+              mode="multiple"
+              options={GROUP_OPTIONS}
+              placeholder="Select business groups"
+              allowClear
+            />
+          </Form.Item>
+        </Form>
       </Drawer>
 
       {/* Add User Drawer */}

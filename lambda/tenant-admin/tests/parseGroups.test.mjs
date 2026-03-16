@@ -7,6 +7,8 @@ vi.mock('@aws-sdk/client-cognito-identity-provider', () => ({
   ListUsersCommand: vi.fn(),
   AdminCreateUserCommand: vi.fn(),
   AdminAddUserToGroupCommand: vi.fn(),
+  AdminRemoveUserFromGroupCommand: vi.fn(),
+  AdminListGroupsForUserCommand: vi.fn(),
   AdminDeleteUserCommand: vi.fn(),
 }));
 vi.mock('@aws-sdk/client-s3', () => ({
@@ -99,6 +101,48 @@ function makeUploadEvent(body, groups = ['TenantAdmin'], tenantId = 'acme') {
     body: JSON.stringify(body),
   };
 }
+
+describe('tenant-admin handler — PUT /users/{username}/groups', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    process.env.USER_POOL_ID = 'us-east-1_test';
+    // All calls resolve with Groups — add/remove commands ignore the return value
+    mockCognitoSend.mockResolvedValue({ Groups: [{ GroupName: 'financial' }] });
+  });
+
+  function makePutGroupsEvent(username, body, groups = ['TenantAdmin'], tenantId = 'acme') {
+    return {
+      requestContext: {
+        authorizer: { jwt: { claims: { 'cognito:groups': groups, 'custom:tenantId': tenantId } } },
+        http: { method: 'PUT', path: `/tenants/${tenantId}/users/${username}` },
+      },
+      pathParameters: { tenantId, username },
+      body: JSON.stringify(body),
+    };
+  }
+
+  it('updates groups: adds new and removes old', async () => {
+    const { handler: h } = await import('../index.mjs');
+    const res = await h(makePutGroupsEvent('user@acme.com', { businessGroups: ['IT', 'sales'] }));
+    expect(res.statusCode).toBe(200);
+    const data = JSON.parse(res.body);
+    expect(data.businessGroups).toEqual(['IT', 'sales']);
+  });
+
+  it('returns 400 for invalid groups in PUT', async () => {
+    const { handler: h } = await import('../index.mjs');
+    const res = await h(makePutGroupsEvent('user@acme.com', { businessGroups: ['unicorn'] }));
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).error).toMatch(/Invalid business groups/);
+  });
+
+  it('clears all groups when empty array is sent', async () => {
+    const { handler: h } = await import('../index.mjs');
+    const res = await h(makePutGroupsEvent('user@acme.com', { businessGroups: [] }));
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).businessGroups).toEqual([]);
+  });
+});
 
 describe('tenant-admin handler — POST /users business group validation', () => {
   beforeEach(() => {
