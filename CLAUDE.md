@@ -1,4 +1,4 @@
-дAlways use Context7 when generating code that depends on external libraries, APIs, or frameworks.
+Always use Context7 when generating code that depends on external libraries, APIs, or frameworks.
 
 Use Context7 to retrieve the latest official documentation and API signatures before generating code.
 

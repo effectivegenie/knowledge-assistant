@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import * as cdk from 'aws-cdk-lib';
-import { KnowledgeAssistantStack } from '../iac/knowledge-assistant-stack';
+import { KnowledgeAssistantStack } from '../infrastructure/knowledge-assistant-stack';
 
 const app = new cdk.App();
 new KnowledgeAssistantStack(app, 'KnowledgeAssistantStack', {

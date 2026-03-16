@@ -51,7 +51,9 @@ npm run dev
 │       ├── components/     ChatWidget
 │       ├── hooks/          useWebSocket
 │       └── pages/          AdminPage, TenantAdminPage
-├── iac/                    CDK stack definition
+├── infrastructure/         AWS CDK stack (decomposed by domain)
+│   ├── constructs/         One Construct per infrastructure domain
+│   └── knowledge-assistant-stack.ts  Root stack (composes all constructs)
 ├── lambda/
 │   ├── admin/              Root admin CRUD (tenants, users)
 │   ├── chat/               WebSocket message handler + RAG

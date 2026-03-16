@@ -71,7 +71,31 @@ Browser
 
 ## Infrastructure as Code
 
-The entire stack is defined in [`iac/knowledge-assistant-stack.ts`](../iac/knowledge-assistant-stack.ts) using AWS CDK v2 and the `@cdklabs/generative-ai-cdk-constructs` library for Bedrock constructs.
+The stack is defined in `infrastructure/` using AWS CDK v2 and `@cdklabs/generative-ai-cdk-constructs`. Each domain is encapsulated in its own CDK `Construct`:
+
+| Construct file | Responsibility |
+|---|---|
+| `constructs/storage.construct.ts` | S3 docs bucket (with CORS) + frontend bucket |
+| `constructs/auth.construct.ts` | Cognito User Pool, groups, pre-token-gen Lambda |
+| `constructs/knowledge-base.construct.ts` | S3 Vectors index, Bedrock KB, default data source |
+| `constructs/database.construct.ts` | DynamoDB — connections, chat history, tenants |
+| `constructs/compute.construct.ts` | All Lambda functions + IAM policies + S3 event triggers |
+| `constructs/websocket-api.construct.ts` | API Gateway WebSocket + routes + Lambda permissions |
+| `constructs/admin-api.construct.ts` | HTTP API defined via **OpenAPI 3.0 spec** (see below) |
+| `constructs/frontend.construct.ts` | CloudFront distribution with OAC |
+| `knowledge-assistant-stack.ts` | Root stack — composes all constructs, emits CfnOutputs |
+
+## Admin API — OpenAPI Integration
+
+The Admin HTTP API (`AdminApiConstruct`) is defined using an OpenAPI 3.0 spec passed directly to `CfnApi.body`. This means:
+
+- Routes, integrations, CORS, and the JWT authorizer are all declared in the spec — no separate `CfnRoute` / `CfnIntegration` / `HttpJwtAuthorizer` resources
+- The spec includes request/response schema definitions for all endpoints
+- `x-amazon-apigateway-integration` extensions bind each operation to the correct Lambda (admin or tenant-admin) with `payloadFormatVersion: "2.0"`
+- The JWT authorizer is declared as `securitySchemes.cognitoJwt` with `x-amazon-apigateway-authorizer`
+- `$default` stage with `autoDeploy: true` is used (no manual deployment resource needed)
+
+The full human-readable API reference is in [`docs/api.md`](api.md).
 
 Key CDK resources:
 - `bedrock.VectorKnowledgeBase` — shared KB with S3 Vectors backend

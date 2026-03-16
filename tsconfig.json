@@ -21,6 +21,6 @@
     "outDir": "dist",
     "rootDir": "."
   },
-  "include": ["bin/**/*.ts", "iac/**/*.ts"],
+  "include": ["bin/**/*.ts", "infrastructure/**/*.ts"],
   "exclude": ["node_modules", "cdk.out", "frontend", "lambda"]
 }
