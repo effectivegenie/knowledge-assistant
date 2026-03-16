@@ -17,6 +17,7 @@ export interface ComputeProps {
   chatHistoryTable: dynamodb.Table;
   connectionsTable: dynamodb.Table;
   invoicesTable: dynamodb.Table;
+  contractsTable: dynamodb.Table;
   knowledgeBase: bedrock.VectorKnowledgeBase;
   docsDataSource: bedrock.S3DataSource;
   userPool: cognito.UserPool;
@@ -34,12 +35,15 @@ export class ComputeConstruct extends Construct {
   public readonly invoicesFn: lambda.Function;
   public readonly docConverterFn: lambda.Function;
   public readonly invoiceProcessorFn: lambda.Function;
+  public readonly contractProcessorFn: lambda.Function;
+  public readonly contractsFn: lambda.Function;
+  public readonly documentsFn: lambda.Function;
 
   constructor(scope: Construct, id: string, props: ComputeProps) {
     super(scope, id);
 
     const { docsBucket, tenantsTable, chatHistoryTable, connectionsTable, invoicesTable,
-            knowledgeBase, docsDataSource, userPool, userPoolClient } = props;
+            contractsTable, knowledgeBase, docsDataSource, userPool, userPoolClient } = props;
 
     const stack = cdk.Stack.of(this);
 
@@ -256,5 +260,60 @@ export class ComputeConstruct extends Construct {
     }));
     // Subscribe invoiceProcessorFn to the shared OBJECT_CREATED topic
     objectCreatedTopicRef.addSubscription(new subs.LambdaSubscription(this.invoiceProcessorFn));
+
+    // ── Contract Processor ───────────────────────────────────────────────────────
+    this.contractProcessorFn = new lambda.Function(this, 'ContractProcessorFunction', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: 'index.handler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../../lambda/contract-processor')),
+      timeout: cdk.Duration.minutes(3),
+      memorySize: 512,
+      environment: {
+        CONTRACTS_TABLE: contractsTable.tableName,
+        TENANTS_TABLE: tenantsTable.tableName,
+        MODEL_ID: 'eu.anthropic.claude-haiku-4-5-20251001-v1:0',
+      },
+    });
+    contractsTable.grantReadWriteData(this.contractProcessorFn);
+    tenantsTable.grantReadData(this.contractProcessorFn);
+    docsBucket.grantRead(this.contractProcessorFn);
+    this.contractProcessorFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['bedrock:InvokeModel'],
+      resources: [
+        `arn:aws:bedrock:${stack.region}:${stack.account}:inference-profile/eu.anthropic.claude-haiku-4-5-20251001-v1:0`,
+        `arn:aws:bedrock:${stack.region}::foundation-model/*`,
+        'arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
+      ],
+    }));
+    objectCreatedTopicRef.addSubscription(new subs.LambdaSubscription(this.contractProcessorFn));
+
+    // ── Contracts ────────────────────────────────────────────────────────────────
+    this.contractsFn = new lambda.Function(this, 'ContractsFunction', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: 'index.handler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../../lambda/contracts')),
+      timeout: cdk.Duration.seconds(30),
+      environment: {
+        CONTRACTS_TABLE: contractsTable.tableName,
+        TENANTS_TABLE: tenantsTable.tableName,
+        DOCS_BUCKET_NAME: docsBucket.bucketName,
+      },
+    });
+    contractsTable.grantReadWriteData(this.contractsFn);
+    tenantsTable.grantReadData(this.contractsFn);
+    docsBucket.grantRead(this.contractsFn);
+
+    // ── Documents ────────────────────────────────────────────────────────────────
+    this.documentsFn = new lambda.Function(this, 'DocumentsFunction', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: 'index.handler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../../lambda/documents')),
+      timeout: cdk.Duration.seconds(30),
+      environment: {
+        DOCS_BUCKET_NAME: docsBucket.bucketName,
+      },
+    });
+    docsBucket.grantRead(this.documentsFn);
+    docsBucket.grantDelete(this.documentsFn);
   }
 }

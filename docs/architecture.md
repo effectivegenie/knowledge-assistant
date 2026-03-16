@@ -18,6 +18,8 @@ graph LR
     HTTP --> LA[Lambda\nadmin]
     HTTP --> LTA[Lambda\ntenant-admin]
     HTTP --> LInv[Lambda\ninvoices]
+    HTTP --> LContracts[Lambda\ncontracts]
+    HTTP --> LDocs[Lambda\ndocuments]
 
     LChat --> Bedrock[Amazon Bedrock\nKnowledge Base]
     LChat --> Claude[Claude\nHaiku 4.5]
@@ -32,11 +34,17 @@ graph LR
     SNS --> LS[Lambda\nsync]
     SNS --> LDC[Lambda\ndoc-converter]
     SNS --> LDP[Lambda\ninvoice-processor]
+    SNS --> LCP[Lambda\ncontract-processor]
     LS --> Bedrock
     LDC --> Claude
     LDC -->|.kb.txt| S3D
     LDP --> Claude
     LDP --> DDB3
+    LCP --> Claude
+    LCP --> DDB4[(DynamoDB\nContractsTable)]
+    LContracts --> DDB4
+    LContracts --> S3D
+    LDocs --> S3D
 ```
 
 ## AWS Services
@@ -50,7 +58,7 @@ graph LR
 | **Amazon Cognito** | User pool, authentication, group-based RBAC |
 | **Amazon Bedrock** | Knowledge base management + Claude inference |
 | **S3 Vectors** | Vector store for Bedrock embeddings |
-| **DynamoDB** | Chat history, connections, tenant registry, invoices |
+| **DynamoDB** | Chat history, connections, tenant registry, invoices, contracts |
 | **S3 (docs bucket)** | Tenant document storage (source for Bedrock + invoice processor) |
 
 ## Data Flow — Chat Message
@@ -126,10 +134,13 @@ sequenceDiagram
 | `invoices` | HTTP API | Invoice CRUD, stats, presigned view URL, tenant profile |
 | `doc-converter` | S3 `OBJECT_CREATED` | PDF/image → Claude Vision → `.kb.txt` sidecar for Bedrock ingestion |
 | `invoice-processor` | S3 `OBJECT_CREATED` | Claude Vision extraction → InvoicesTable (category=invoice only) |
+| `contract-processor` | S3 `OBJECT_CREATED` | Claude Vision extraction → ContractsTable (category=contract only) |
+| `contracts` | HTTP API | Contract CRUD, stats, presigned view URL |
+| `documents` | HTTP API | List/delete/view-url for category=general S3 documents |
 | `sync` | S3 `OBJECT_CREATED` | Start Bedrock ingestion job |
 | `pre-token-gen` | Cognito trigger | Inject `custom:tenantId` into ID token |
 
-`doc-converter`, `invoice-processor`, and `sync` all receive `OBJECT_CREATED` events via a shared **SNS topic** (S3 → SNS → Lambda subscriptions). This avoids the S3 constraint that prohibits two Lambda notifications for the same event type without non-overlapping prefix/suffix filters. `OBJECT_REMOVED` goes directly to `sync` only. Failures in one Lambda do not affect the others.
+`doc-converter`, `invoice-processor`, `contract-processor`, and `sync` all receive `OBJECT_CREATED` events via a shared **SNS topic** (S3 → SNS → Lambda subscriptions). This avoids the S3 constraint that prohibits two Lambda notifications for the same event type without non-overlapping prefix/suffix filters. `OBJECT_REMOVED` goes directly to `sync` only. Failures in one Lambda do not affect the others.
 
 Bedrock KB (S3 Vectors backend) only supports plain-text files. `doc-converter` converts PDFs and images to `.kb.txt` sidecars via Claude Vision; the `.kb.txt` file triggers another S3 event → `sync` → Bedrock ingestion succeeds. Original files are kept in S3 for presigned-URL viewing. The `.metadata.json` is copied to `.kb.txt.metadata.json` so tenant isolation and group access control are preserved.
 
@@ -145,7 +156,7 @@ graph TD
     Stack --> Auth["AuthConstruct\n── Cognito User Pool\n── groups\n── pre-token-gen Lambda"]
     Stack --> KB["KnowledgeBaseConstruct\n── S3 Vectors index\n── Bedrock KB\n── default data source"]
     Stack --> DB["DatabaseConstruct\n── ConnectionsTable\n── ChatHistoryTable\n── TenantsTable\n── InvoicesTable"]
-    Stack --> Compute["ComputeConstruct\n── 10 Lambda functions\n── SNS fanout topic\n── IAM policies"]
+    Stack --> Compute["ComputeConstruct\n── 13 Lambda functions\n── SNS fanout topic\n── IAM policies"]
     Stack --> WS["WebSocketApiConstruct\n── API GW WebSocket\n── $connect / sendMessage / history / $disconnect routes"]
     Stack --> API["AdminApiConstruct\n── API GW HTTP\n── OpenAPI 3.0 spec\n── JWT authorizer"]
     Stack --> FE["FrontendConstruct\n── CloudFront distribution\n── OAC for S3"]
@@ -156,6 +167,7 @@ graph TD
     Auth -->|userPool| API
     KB -->|knowledgeBase| Compute
     DB -->|all tables| Compute
+    DB -->|contractsTable| Compute
     Compute -->|Lambda ARNs| WS
     Compute -->|Lambda ARNs| API
 ```
@@ -165,7 +177,7 @@ graph TD
 | `constructs/storage.construct.ts` | S3 docs bucket (with CORS) + frontend bucket |
 | `constructs/auth.construct.ts` | Cognito User Pool, groups, pre-token-gen Lambda |
 | `constructs/knowledge-base.construct.ts` | S3 Vectors index, Bedrock KB, default data source |
-| `constructs/database.construct.ts` | DynamoDB — connections, chat history, tenants, invoices |
+| `constructs/database.construct.ts` | DynamoDB — connections, chat history, tenants, invoices, contracts |
 | `constructs/compute.construct.ts` | All Lambda functions + IAM policies + SNS topic + S3 event triggers |
 | `constructs/websocket-api.construct.ts` | API Gateway WebSocket + routes + Lambda permissions |
 | `constructs/admin-api.construct.ts` | HTTP API defined via **OpenAPI 3.0 spec** (see below) |

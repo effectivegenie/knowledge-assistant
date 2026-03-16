@@ -320,6 +320,21 @@ When `status` is set to `confirmed` or `paid`, a timestamp (`confirmedAt` / `pai
 
 ---
 
+### `DELETE /tenants/{tenantId}/invoices/{invoiceId}`
+
+Delete invoice record from DynamoDB and all associated S3 files (original, `.metadata.json`, `.kb.txt`, `.kb.txt.metadata.json`).
+
+**Auth**: TenantAdmin or RootAdmin
+
+**Response 200**
+```json
+{ "invoiceId": "uuid", "deleted": true }
+```
+
+Returns 404 if invoice not found.
+
+---
+
 ### `GET /tenants/{tenantId}/invoices/{invoiceId}/view-url`
 
 Generate a presigned S3 GET URL (TTL: 600 s) for the original uploaded document.
@@ -391,6 +406,165 @@ Update tenant legal identity.
 ```
 
 **Response 200** — same shape as GET.
+
+---
+
+## Contracts
+
+All contracts endpoints require **RootAdmin** or **TenantAdmin of that tenant**.
+
+### `GET /tenants/{tenantId}/contracts`
+
+List contracts for tenant. Supports pagination and filtering.
+
+**Query parameters**
+
+| Parameter | Description |
+|---|---|
+| `page` | Zero-based page index (default: `0`) |
+| `pageSize` | Items per page (default: `20`) |
+| `status` | Filter by status |
+| `contractType` | Filter by contract type |
+| `search` | Case-insensitive match against `contractNumber`, `clientName`, `counterpartyName` |
+
+**Response 200**
+```json
+{ "items": [...], "total": 0, "page": 0, "pageSize": 20 }
+```
+
+---
+
+### `GET /tenants/{tenantId}/contracts/stats`
+
+Aggregated stats for confirmed contracts.
+
+**Response 200**
+```json
+{
+  "active": 10,
+  "expiringSoon": 2,
+  "expired": 3,
+  "pending": 4,
+  "total": 15
+}
+```
+
+- `active`: confirmed contracts with `endDate` > 30 days away or no `endDate`
+- `expiringSoon`: confirmed contracts expiring within 30 days
+- `expired`: confirmed contracts with `endDate` in the past
+- `pending`: contracts with status `extracted` or `review_needed`
+- `total`: total confirmed contracts
+
+---
+
+### `PUT /tenants/{tenantId}/contracts/{contractId}`
+
+Update status and/or editable fields. Returns 404 if contract does not exist.
+
+**Request body**
+```json
+{
+  "status": "confirmed",
+  "contractNumber": "CTR-001",
+  "signingDate": "2024-01-15"
+}
+```
+
+Only `status` is required. All other fields are optional.
+
+Valid statuses: `pending`, `extracted`, `review_needed`, `confirmed`, `rejected`.
+Valid contractTypes: `services`, `rental`, `supply`, `employment`, `nda`, `framework`, `other`.
+
+**Response 200**
+```json
+{ "contractId": "uuid", "status": "confirmed" }
+```
+
+---
+
+### `DELETE /tenants/{tenantId}/contracts/{contractId}`
+
+Delete contract record from DynamoDB and all associated S3 files.
+
+**Response 200**
+```json
+{ "contractId": "uuid", "deleted": true }
+```
+
+---
+
+### `GET /tenants/{tenantId}/contracts/{contractId}/view-url`
+
+Returns presigned S3 GET URL (600 s TTL) for the original contract document.
+
+**Response 200**
+```json
+{ "url": "https://..." }
+```
+
+---
+
+## General Documents
+
+All documents endpoints require **RootAdmin** or **TenantAdmin of that tenant**.
+
+### `GET /tenants/{tenantId}/documents`
+
+List general documents (`category=general`) from the tenant S3 bucket.
+
+Fetches all S3 objects under the tenant prefix, reads each `.metadata.json`, and keeps only those with `category=general`.
+
+**Query parameters**
+
+| Parameter | Description |
+|---|---|
+| `page` | Zero-based page index (default: `0`) |
+| `pageSize` | Items per page (default: `20`) |
+| `search` | Case-insensitive match against `filename` |
+
+**Response 200**
+```json
+{
+  "items": [
+    {
+      "key": "product-manual.pdf",
+      "fullKey": "acme/product-manual.pdf",
+      "size": 204800,
+      "lastModified": "2024-01-15T10:00:00.000Z",
+      "filename": "product-manual.pdf"
+    }
+  ],
+  "total": 1,
+  "page": 0,
+  "pageSize": 20
+}
+```
+
+---
+
+### `DELETE /tenants/{tenantId}/documents?key={key}`
+
+Delete a document and all its sidecars (`.metadata.json`, `.kb.txt`, `.kb.txt.metadata.json`) from S3.
+
+**Query parameter**: `key` (required) — the S3 key relative to tenant prefix or full key.
+
+**Response 200**
+```json
+{ "deleted": "acme/product-manual.pdf" }
+```
+
+---
+
+### `GET /tenants/{tenantId}/documents/view-url?key={key}`
+
+Returns presigned S3 GET URL (600 s TTL) for a general document.
+
+**Query parameter**: `key` (required)
+
+**Response 200**
+```json
+{ "url": "https://..." }
+```
 
 ---
 

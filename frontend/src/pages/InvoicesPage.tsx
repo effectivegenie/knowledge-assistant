@@ -5,7 +5,7 @@ import {
 } from 'antd';
 import {
   SearchOutlined, FileTextOutlined, EyeOutlined, CheckOutlined,
-  CloseOutlined, SettingOutlined, CheckSquareOutlined,
+  CloseOutlined, SettingOutlined, CheckSquareOutlined, DeleteOutlined,
 } from '@ant-design/icons';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -13,6 +13,7 @@ import {
 import dayjs from 'dayjs';
 import { useAuth } from '../auth/AuthContext';
 import { adminApiUrl } from '../config';
+import { t } from '../i18n';
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -116,13 +117,25 @@ function useInvoicesApi() {
     return d.url;
   }, [base, idToken]);
 
-  return { tenantId, idToken, base, updateStatus, updateInvoiceFields, getViewUrl };
+  const deleteInvoice = useCallback(async (invoiceId: string) => {
+    const res = await fetch(`${base}/invoices/${encodeURIComponent(invoiceId)}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      throw new Error(d.error || res.statusText);
+    }
+    return res.json();
+  }, [base, idToken]);
+
+  return { tenantId, idToken, base, updateStatus, updateInvoiceFields, getViewUrl, deleteInvoice };
 }
 
 // ── Invoices Tab ─────────────────────────────────────────────────────────────
 
 function InvoicesTab() {
-  const { idToken, base, updateStatus, getViewUrl } = useInvoicesApi();
+  const { idToken, base, updateStatus, getViewUrl, deleteInvoice } = useInvoicesApi();
   const [items, setItems]         = useState<Invoice[]>([]);
   const [total, setTotal]         = useState(0);
   const [loading, setLoading]     = useState(false);
@@ -182,54 +195,54 @@ function InvoicesTab() {
       try { await updateStatus(id, 'confirmed'); ok++; } catch {}
     }
     setBulkLoading(false);
-    if (ok > 0) { message.success(`${ok} invoice${ok !== 1 ? 's' : ''} confirmed`); setSelected([]); fetchInvoices(page); }
+    if (ok > 0) { message.success(`${ok} потвърдени`); setSelected([]); fetchInvoices(page); }
   };
 
   const columns = [
     {
-      title: 'Invoice #',
+      title: 'Фактура №',
       dataIndex: 'invoiceNumber',
       key: 'invoiceNumber',
       sorter: (a: Invoice, b: Invoice) => (a.invoiceNumber || '').localeCompare(b.invoiceNumber || ''),
       render: (v?: string) => v || <Text type="secondary">—</Text>,
     },
     {
-      title: 'Date',
+      title: 'Дата',
       dataIndex: 'issueDate',
       key: 'issueDate',
       sorter: (a: Invoice, b: Invoice) => (a.issueDate || '').localeCompare(b.issueDate || ''),
       render: fmtDate,
     },
     {
-      title: 'Direction',
+      title: 'Посока',
       dataIndex: 'direction',
       key: 'direction',
       sorter: (a: Invoice, b: Invoice) => a.direction.localeCompare(b.direction),
-      render: (v: string) => <Tag color={DIR_COLOR[v] ?? 'default'}>{v}</Tag>,
+      render: (v: string) => <Tag color={DIR_COLOR[v] ?? 'default'}>{t.direction(v)}</Tag>,
     },
     {
-      title: 'Type',
+      title: 'Тип',
       dataIndex: 'documentType',
       key: 'documentType',
       sorter: (a: Invoice, b: Invoice) => a.documentType.localeCompare(b.documentType),
-      render: (v: string) => <Tag>{v}</Tag>,
+      render: (v: string) => <Tag>{t.invoiceType(v)}</Tag>,
     },
     {
-      title: 'Supplier',
+      title: 'Доставчик',
       dataIndex: 'supplierName',
       key: 'supplierName',
       sorter: (a: Invoice, b: Invoice) => (a.supplierName || '').localeCompare(b.supplierName || ''),
       render: (v?: string) => v || <Text type="secondary">—</Text>,
     },
     {
-      title: 'Client',
+      title: 'Клиент',
       dataIndex: 'clientName',
       key: 'clientName',
       sorter: (a: Invoice, b: Invoice) => (a.clientName || '').localeCompare(b.clientName || ''),
       render: (v?: string) => v || <Text type="secondary">—</Text>,
     },
     {
-      title: 'Total (EUR)',
+      title: 'Сума (EUR)',
       dataIndex: 'amountTotal',
       key: 'amountTotal',
       align: 'right' as const,
@@ -237,24 +250,34 @@ function InvoicesTab() {
       render: (v?: number) => fmtEur(v),
     },
     {
-      title: 'Status',
+      title: 'Статус',
       dataIndex: 'status',
       key: 'status',
       sorter: (a: Invoice, b: Invoice) => a.status.localeCompare(b.status),
-      render: (v: string) => <Tag color={STATUS_COLOR[v] ?? 'default'}>{v.replace('_', ' ')}</Tag>,
+      render: (v: string) => <Tag color={STATUS_COLOR[v] ?? 'default'}>{t.status(v)}</Tag>,
     },
     {
       title: '',
       key: 'actions',
-      width: 60,
+      width: 90,
       render: (_: unknown, record: Invoice) => (
-        <Button
-          type="text"
-          icon={<EyeOutlined />}
-          onClick={() => openViewer(record)}
-          title="View document"
-          style={{ color: BLUE }}
-        />
+        <Space size={0}>
+          <Button
+            type="text"
+            icon={<EyeOutlined />}
+            onClick={() => openViewer(record)}
+            title="Преглед"
+            style={{ color: BLUE }}
+          />
+          <Popconfirm
+            title="Изтрий фактурата и всички файлове?"
+            onConfirm={async () => { try { await deleteInvoice(record.invoiceId); message.success('Изтрита'); fetchInvoices(page); } catch(e) { message.error(e instanceof Error ? e.message : 'Грешка'); } }}
+            okText="Изтрий"
+            okButtonProps={{ danger: true }}
+          >
+            <Button type="text" icon={<DeleteOutlined />} danger title="Изтрий" />
+          </Popconfirm>
+        </Space>
       ),
     },
   ];
@@ -266,7 +289,7 @@ function InvoicesTab() {
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12, alignItems: 'center' }}>
         <Input
           prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />}
-          placeholder="Search invoice #, supplier, client…"
+          placeholder="Търсене по №, доставчик, клиент…"
           value={search}
           onChange={e => setSearch(e.target.value)}
           onPressEnter={() => fetchInvoices(0)}
@@ -275,45 +298,45 @@ function InvoicesTab() {
           style={{ width: 280 }}
         />
         <Select
-          placeholder="All statuses"
+          placeholder="Всички статуси"
           allowClear
           value={statusFilter}
           onChange={v => setStatusFilter(v ?? null)}
           style={{ width: 160 }}
           options={[
-            { value: 'extracted',    label: 'Extracted' },
-            { value: 'confirmed',    label: 'Confirmed' },
-            { value: 'paid',         label: 'Paid' },
-            { value: 'rejected',     label: 'Rejected' },
+            { value: 'extracted',    label: t.status('extracted') },
+            { value: 'confirmed',    label: t.status('confirmed') },
+            { value: 'paid',         label: t.status('paid') },
+            { value: 'rejected',     label: t.status('rejected') },
           ]}
         />
         <Select
-          placeholder="All directions"
+          placeholder="Всички посоки"
           allowClear
           value={dirFilter}
           onChange={v => setDirFilter(v ?? null)}
           style={{ width: 150 }}
           options={[
-            { value: 'incoming', label: 'Incoming' },
-            { value: 'outgoing', label: 'Outgoing' },
+            { value: 'incoming', label: t.direction('incoming') },
+            { value: 'outgoing', label: t.direction('outgoing') },
           ]}
         />
         <RangePicker
           value={dates}
           onChange={v => setDates(v as [dayjs.Dayjs | null, dayjs.Dayjs | null] | null)}
           format="DD MMM YYYY"
-          placeholder={['From date', 'To date']}
+          placeholder={['От дата', 'До дата']}
           style={{ width: 260 }}
         />
-        <Button onClick={() => fetchInvoices(0)} loading={loading}>Search</Button>
+        <Button onClick={() => fetchInvoices(0)} loading={loading}>Търсене</Button>
         {extractedSelected.length > 0 && (
           <Popconfirm
-            title={`Confirm ${extractedSelected.length} invoice${extractedSelected.length !== 1 ? 's' : ''}?`}
+            title={`Потвърди ${extractedSelected.length} фактури?`}
             onConfirm={handleBulkConfirm}
-            okText="Confirm all"
+            okText="Потвърди всички"
           >
             <Button icon={<CheckSquareOutlined />} type="primary" loading={bulkLoading}>
-              Bulk confirm ({extractedSelected.length})
+              Масово потвърждение ({extractedSelected.length})
             </Button>
           </Popconfirm>
         )}
@@ -330,7 +353,7 @@ function InvoicesTab() {
           total,
           hideOnSinglePage: true,
           showSizeChanger: false,
-          showTotal: t => `${t} invoice${t !== 1 ? 's' : ''}`,
+          showTotal: tot => `${tot} фактури`,
           onChange: p => fetchInvoices(p - 1),
         }}
         bordered
@@ -339,7 +362,7 @@ function InvoicesTab() {
 
       {/* View drawer */}
       <Drawer
-        title={<span style={{ color: '#fff', fontWeight: 700 }}>Invoice details</span>}
+        title={<span style={{ color: '#fff', fontWeight: 700 }}>Детайли фактура</span>}
         placement="right"
         open={!!viewing}
         onClose={() => setViewing(null)}
@@ -350,20 +373,20 @@ function InvoicesTab() {
         {viewing && (
           <>
             <Descriptions column={1} bordered size="small" labelStyle={{ width: 150, color: BLUE }}>
-              <Descriptions.Item label="Invoice #">{viewing.invoiceNumber || '—'}</Descriptions.Item>
-              <Descriptions.Item label="Type"><Tag>{viewing.documentType}</Tag></Descriptions.Item>
-              <Descriptions.Item label="Direction"><Tag color={DIR_COLOR[viewing.direction]}>{viewing.direction}</Tag></Descriptions.Item>
-              <Descriptions.Item label="Status"><Tag color={STATUS_COLOR[viewing.status]}>{viewing.status.replace('_', ' ')}</Tag></Descriptions.Item>
-              <Descriptions.Item label="Issue date">{fmtDate(viewing.issueDate)}</Descriptions.Item>
-              <Descriptions.Item label="Due date">{fmtDate(viewing.dueDate)}</Descriptions.Item>
-              <Descriptions.Item label="Supplier">{viewing.supplierName || '—'}</Descriptions.Item>
-              <Descriptions.Item label="Supplier VAT">{viewing.supplierVatNumber || '—'}</Descriptions.Item>
-              <Descriptions.Item label="Client">{viewing.clientName || '—'}</Descriptions.Item>
-              <Descriptions.Item label="Client VAT">{viewing.clientVatNumber || '—'}</Descriptions.Item>
-              <Descriptions.Item label="Net">{fmtEur(viewing.amountNet)}</Descriptions.Item>
-              <Descriptions.Item label="VAT">{fmtEur(viewing.amountVat)}</Descriptions.Item>
-              <Descriptions.Item label="Total"><strong>{fmtEur(viewing.amountTotal)}</strong></Descriptions.Item>
-              <Descriptions.Item label="Confidence">{viewing.confidence != null ? `${Math.round(viewing.confidence * 100)}%` : '—'}</Descriptions.Item>
+              <Descriptions.Item label="Фактура №">{viewing.invoiceNumber || '—'}</Descriptions.Item>
+              <Descriptions.Item label="Тип"><Tag>{t.invoiceType(viewing.documentType)}</Tag></Descriptions.Item>
+              <Descriptions.Item label="Посока"><Tag color={DIR_COLOR[viewing.direction]}>{t.direction(viewing.direction)}</Tag></Descriptions.Item>
+              <Descriptions.Item label="Статус"><Tag color={STATUS_COLOR[viewing.status]}>{t.status(viewing.status)}</Tag></Descriptions.Item>
+              <Descriptions.Item label="Дата издаване">{fmtDate(viewing.issueDate)}</Descriptions.Item>
+              <Descriptions.Item label="Дата плащане">{fmtDate(viewing.dueDate)}</Descriptions.Item>
+              <Descriptions.Item label="Доставчик">{viewing.supplierName || '—'}</Descriptions.Item>
+              <Descriptions.Item label="ДДС на доставчик">{viewing.supplierVatNumber || '—'}</Descriptions.Item>
+              <Descriptions.Item label="Клиент">{viewing.clientName || '—'}</Descriptions.Item>
+              <Descriptions.Item label="ДДС на клиент">{viewing.clientVatNumber || '—'}</Descriptions.Item>
+              <Descriptions.Item label="Нето">{fmtEur(viewing.amountNet)}</Descriptions.Item>
+              <Descriptions.Item label="ДДС">{fmtEur(viewing.amountVat)}</Descriptions.Item>
+              <Descriptions.Item label="Общо"><strong>{fmtEur(viewing.amountTotal)}</strong></Descriptions.Item>
+              <Descriptions.Item label="Точност">{viewing.confidence != null ? `${Math.round(viewing.confidence * 100)}%` : '—'}</Descriptions.Item>
             </Descriptions>
             <div style={{ marginTop: 16 }}>
               {viewUrlLoading ? (
@@ -376,7 +399,7 @@ function InvoicesTab() {
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  View original document
+                  Виж оригинален документ
                 </Button>
               ) : null}
             </div>
@@ -461,7 +484,7 @@ function PendingReviewTab() {
         if (values[f] != null) payload[f] = values[f];
       }
       await updateInvoiceFields(reviewing.invoiceId, payload);
-      message.success('Marked as invoice');
+      message.success('Маркирана като фактура');
       setReviewing(null);
       fetchPending();
     } catch (e) {
@@ -475,7 +498,7 @@ function PendingReviewTab() {
     setActionLoading(true);
     try {
       await updateStatus(invoiceId, 'rejected');
-      message.success('Rejected');
+      message.success('Отхвърлена');
       setReviewing(null);
       fetchPending();
     } catch (e) {
@@ -492,7 +515,7 @@ function PendingReviewTab() {
       try { await updateStatus(id, 'confirmed'); ok++; } catch {}
     }
     setBulkLoading(false);
-    if (ok > 0) { message.success(`${ok} confirmed`); setSelected([]); fetchPending(); }
+    if (ok > 0) { message.success(`${ok} потвърдени`); setSelected([]); fetchPending(); }
   };
 
   const filtered = items.filter(i => {
@@ -505,32 +528,32 @@ function PendingReviewTab() {
 
   const columns = [
     {
-      title: 'Invoice #',
+      title: 'Фактура №',
       dataIndex: 'invoiceNumber',
       sorter: (a: Invoice, b: Invoice) => (a.invoiceNumber || '').localeCompare(b.invoiceNumber || ''),
       render: (v?: string) => v || <Text type="secondary">—</Text>,
     },
     {
-      title: 'Date',
+      title: 'Дата',
       dataIndex: 'issueDate',
       sorter: (a: Invoice, b: Invoice) => (a.issueDate || '').localeCompare(b.issueDate || ''),
       render: fmtDate,
     },
     {
-      title: 'Supplier',
+      title: 'Доставчик',
       dataIndex: 'supplierName',
       sorter: (a: Invoice, b: Invoice) => (a.supplierName || '').localeCompare(b.supplierName || ''),
       render: (v?: string) => v || <Text type="secondary">—</Text>,
     },
     {
-      title: 'Total (EUR)',
+      title: 'Сума (EUR)',
       dataIndex: 'amountTotal',
       align: 'right' as const,
       sorter: (a: Invoice, b: Invoice) => (a.amountTotal ?? 0) - (b.amountTotal ?? 0),
       render: (v?: number) => fmtEur(v),
     },
     {
-      title: 'Confidence',
+      title: 'Точност',
       dataIndex: 'confidence',
       sorter: (a: Invoice, b: Invoice) => (a.confidence ?? 0) - (b.confidence ?? 0),
       render: (v?: number) => v != null ? (
@@ -557,7 +580,7 @@ function PendingReviewTab() {
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12, alignItems: 'center' }}>
         <Input
           prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />}
-          placeholder="Search invoice #, supplier, client…"
+          placeholder="Търсене по №, доставчик, клиент…"
           value={search}
           onChange={e => setSearch(e.target.value)}
           allowClear
@@ -565,12 +588,12 @@ function PendingReviewTab() {
         />
         {selected.length > 0 && (
           <Popconfirm
-            title={`Confirm ${selected.length} invoice${selected.length !== 1 ? 's' : ''} as valid?`}
+            title={`Потвърди ${selected.length} фактури като валидни?`}
             onConfirm={handleBulkConfirm}
-            okText="Confirm all"
+            okText="Потвърди всички"
           >
             <Button icon={<CheckSquareOutlined />} type="primary" loading={bulkLoading}>
-              Bulk confirm ({selected.length})
+              Масово потвърждение ({selected.length})
             </Button>
           </Popconfirm>
         )}
@@ -581,14 +604,14 @@ function PendingReviewTab() {
         rowKey="invoiceId"
         columns={columns}
         rowSelection={{ selectedRowKeys: selected, onChange: keys => setSelected(keys as string[]) }}
-        pagination={{ pageSize: 20, hideOnSinglePage: true, showSizeChanger: false, showTotal: t => `${t} pending` }}
+        pagination={{ pageSize: 20, hideOnSinglePage: true, showSizeChanger: false, showTotal: tot => `${tot} чакащи` }}
         bordered
         size="small"
       />
 
       {/* Review drawer */}
       <Drawer
-        title={<span style={{ color: '#fff', fontWeight: 700 }}>Review document</span>}
+        title={<span style={{ color: '#fff', fontWeight: 700 }}>Преглед на документ</span>}
         placement="right"
         open={!!reviewing}
         onClose={() => setReviewing(null)}
@@ -599,13 +622,13 @@ function PendingReviewTab() {
           reviewing && (
             <Space style={{ float: 'right' }}>
               <Popconfirm
-                title="Mark as not an invoice? The record will be rejected."
+                title="Маркирай като невалидна фактура? Записът ще бъде отхвърлен."
                 onConfirm={() => doReject(reviewing.invoiceId)}
-                okText="Yes, reject"
+                okText="Да, отхвърли"
                 okButtonProps={{ danger: true }}
               >
                 <Button icon={<CloseOutlined />} danger loading={actionLoading}>
-                  Not an invoice
+                  Не е фактура
                 </Button>
               </Popconfirm>
               <Button
@@ -614,7 +637,7 @@ function PendingReviewTab() {
                 loading={actionLoading}
                 onClick={() => reviewForm.submit()}
               >
-                Yes, it's an invoice
+                Потвърди фактура
               </Button>
             </Space>
           )
@@ -625,10 +648,10 @@ function PendingReviewTab() {
             {reviewing.confidence != null && (
               <div style={{ marginBottom: 12 }}>
                 <Tag color={reviewing.confidence >= 0.7 ? 'blue' : reviewing.confidence >= 0.5 ? 'orange' : 'red'}>
-                  Confidence: {Math.round(reviewing.confidence * 100)}%
+                  Точност: {Math.round(reviewing.confidence * 100)}%
                 </Tag>
                 <Text type="secondary" style={{ fontSize: 12, marginLeft: 8 }}>
-                  Extracted {fmtDate(reviewing.extractedAt)} — correct any fields before confirming
+                  Извлечена на {fmtDate(reviewing.extractedAt)} — поправи полетата преди потвърждение
                 </Text>
               </div>
             )}
@@ -640,79 +663,79 @@ function PendingReviewTab() {
             >
               <Row gutter={12}>
                 <Col span={12}>
-                  <Form.Item name="invoiceNumber" label="Invoice #">
-                    <Input placeholder="e.g. INV-001" />
+                  <Form.Item name="invoiceNumber" label="Фактура №">
+                    <Input placeholder="напр. ФАК-001" />
                   </Form.Item>
                 </Col>
                 <Col span={12}>
-                  <Form.Item name="documentType" label="Type">
+                  <Form.Item name="documentType" label="Тип">
                     <Select options={[
-                      { value: 'invoice',     label: 'Invoice' },
-                      { value: 'proforma',    label: 'Proforma' },
-                      { value: 'credit_note', label: 'Credit note' },
+                      { value: 'invoice',     label: t.invoiceType('invoice') },
+                      { value: 'proforma',    label: t.invoiceType('proforma') },
+                      { value: 'credit_note', label: t.invoiceType('credit_note') },
                     ]} />
                   </Form.Item>
                 </Col>
               </Row>
               <Row gutter={12}>
                 <Col span={12}>
-                  <Form.Item name="direction" label="Direction">
+                  <Form.Item name="direction" label="Посока">
                     <Select options={[
-                      { value: 'incoming', label: 'Incoming' },
-                      { value: 'outgoing', label: 'Outgoing' },
+                      { value: 'incoming', label: t.direction('incoming') },
+                      { value: 'outgoing', label: t.direction('outgoing') },
                     ]} />
                   </Form.Item>
                 </Col>
                 <Col span={12}>
-                  <Form.Item name="issueDate" label="Issue date">
+                  <Form.Item name="issueDate" label="Дата издаване">
                     <DatePicker style={{ width: '100%' }} format="DD MMM YYYY" />
                   </Form.Item>
                 </Col>
               </Row>
               <Row gutter={12}>
                 <Col span={12}>
-                  <Form.Item name="dueDate" label="Due date">
+                  <Form.Item name="dueDate" label="Дата плащане">
                     <DatePicker style={{ width: '100%' }} format="DD MMM YYYY" />
                   </Form.Item>
                 </Col>
               </Row>
               <Row gutter={12}>
                 <Col span={12}>
-                  <Form.Item name="supplierName" label="Supplier">
+                  <Form.Item name="supplierName" label="Доставчик">
                     <Input />
                   </Form.Item>
                 </Col>
                 <Col span={12}>
-                  <Form.Item name="supplierVatNumber" label="Supplier VAT">
-                    <Input placeholder="e.g. BG123456789" />
+                  <Form.Item name="supplierVatNumber" label="ДДС доставчик">
+                    <Input placeholder="напр. BG123456789" />
                   </Form.Item>
                 </Col>
               </Row>
               <Row gutter={12}>
                 <Col span={12}>
-                  <Form.Item name="clientName" label="Client">
+                  <Form.Item name="clientName" label="Клиент">
                     <Input />
                   </Form.Item>
                 </Col>
                 <Col span={12}>
-                  <Form.Item name="clientVatNumber" label="Client VAT">
+                  <Form.Item name="clientVatNumber" label="ДДС клиент">
                     <Input />
                   </Form.Item>
                 </Col>
               </Row>
               <Row gutter={12}>
                 <Col span={8}>
-                  <Form.Item name="amountNet" label="Net">
+                  <Form.Item name="amountNet" label="Нето">
                     <InputNumber style={{ width: '100%' }} precision={2} prefix="€" />
                   </Form.Item>
                 </Col>
                 <Col span={8}>
-                  <Form.Item name="amountVat" label="VAT">
+                  <Form.Item name="amountVat" label="ДДС">
                     <InputNumber style={{ width: '100%' }} precision={2} prefix="€" />
                   </Form.Item>
                 </Col>
                 <Col span={8}>
-                  <Form.Item name="amountTotal" label="Total">
+                  <Form.Item name="amountTotal" label="Общо">
                     <InputNumber style={{ width: '100%' }} precision={2} prefix="€" />
                   </Form.Item>
                 </Col>
@@ -729,7 +752,7 @@ function PendingReviewTab() {
                   rel="noopener noreferrer"
                   size="small"
                 >
-                  View original document
+                  Виж оригинален документ
                 </Button>
               ) : null}
             </div>
@@ -768,8 +791,8 @@ function StatsTab() {
 
   const chartData = (stats?.byMonth || []).map(m => ({
     name: m.month,
-    Income: m.income,
-    Expenses: m.expenses,
+    Приходи: m.income,
+    Разходи: m.expenses,
   }));
 
   return (
@@ -779,10 +802,10 @@ function StatsTab() {
           value={dates}
           onChange={v => setDates(v as [dayjs.Dayjs | null, dayjs.Dayjs | null] | null)}
           format="DD MMM YYYY"
-          placeholder={['From date', 'To date']}
+          placeholder={['От дата', 'До дата']}
           style={{ width: 260 }}
         />
-        <Button onClick={fetchStats} loading={loading}>Apply</Button>
+        <Button onClick={fetchStats} loading={loading}>Приложи</Button>
       </div>
 
       {stats && (
@@ -791,7 +814,7 @@ function StatsTab() {
             <Col xs={12} sm={6}>
               <div style={{ background: '#f0f4fb', borderRadius: 8, padding: '16px 20px', borderLeft: `4px solid ${GOLD}` }}>
                 <Statistic
-                  title={<span style={{ color: '#475569', fontSize: 13 }}>Income</span>}
+                  title={<span style={{ color: '#475569', fontSize: 13 }}>Приходи</span>}
                   value={stats.totals.income}
                   precision={2}
                   prefix="€"
@@ -802,7 +825,7 @@ function StatsTab() {
             <Col xs={12} sm={6}>
               <div style={{ background: '#f0f4fb', borderRadius: 8, padding: '16px 20px', borderLeft: '4px solid #e85d04' }}>
                 <Statistic
-                  title={<span style={{ color: '#475569', fontSize: 13 }}>Expenses</span>}
+                  title={<span style={{ color: '#475569', fontSize: 13 }}>Разходи</span>}
                   value={stats.totals.expenses}
                   precision={2}
                   prefix="€"
@@ -813,7 +836,7 @@ function StatsTab() {
             <Col xs={12} sm={6}>
               <div style={{ background: '#f0f4fb', borderRadius: 8, padding: '16px 20px', borderLeft: `4px solid ${stats.totals.net >= 0 ? '#27ae60' : '#c0392b'}` }}>
                 <Statistic
-                  title={<span style={{ color: '#475569', fontSize: 13 }}>Net</span>}
+                  title={<span style={{ color: '#475569', fontSize: 13 }}>Нето</span>}
                   value={stats.totals.net}
                   precision={2}
                   prefix="€"
@@ -824,7 +847,7 @@ function StatsTab() {
             <Col xs={12} sm={6}>
               <div style={{ background: '#fff8e6', borderRadius: 8, padding: '16px 20px', borderLeft: `4px solid ${GOLD_DARK}` }}>
                 <Statistic
-                  title={<span style={{ color: '#475569', fontSize: 13 }}>Unpaid (confirmed)</span>}
+                  title={<span style={{ color: '#475569', fontSize: 13 }}>Неплатени (потвърдени)</span>}
                   value={stats.totals.unpaid}
                   precision={2}
                   prefix="€"
@@ -835,9 +858,9 @@ function StatsTab() {
           </Row>
 
           <div style={{ background: '#fff', borderRadius: 8, padding: 20, border: '1px solid #f0f4fb' }}>
-            <Text strong style={{ display: 'block', marginBottom: 16, color: BLUE }}>Income vs Expenses by month</Text>
+            <Text strong style={{ display: 'block', marginBottom: 16, color: BLUE }}>Приходи vs Разходи по месец</Text>
             {chartData.length === 0 ? (
-              <Text type="secondary">No data for the selected period.</Text>
+              <Text type="secondary">Няма данни за избрания период.</Text>
             ) : (
               <ResponsiveContainer width="100%" height={320}>
                 <BarChart data={chartData} margin={{ top: 4, right: 16, left: 16, bottom: 4 }}>
@@ -846,8 +869,8 @@ function StatsTab() {
                   <YAxis tick={{ fill: '#475569', fontSize: 12 }} tickFormatter={v => `€${v >= 1000 ? `${(v/1000).toFixed(0)}k` : v}`} />
                   <Tooltip formatter={(v) => fmtEur(typeof v === 'number' ? v : undefined)} />
                   <Legend />
-                  <Bar dataKey="Income"   fill={GOLD}      radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="Expenses" fill="#e85d04"   radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Приходи" fill={GOLD}      radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Разходи" fill="#e85d04"   radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             )}
@@ -885,7 +908,7 @@ function ProfileTab() {
         body: JSON.stringify({ ...values, aliases }),
       });
       if (!res.ok) throw new Error((await res.json()).error || res.statusText);
-      message.success('Profile saved');
+      message.success('Профилът е записан');
     } catch (e) {
       message.error(e instanceof Error ? e.message : 'Failed to save');
     } finally {
@@ -897,23 +920,23 @@ function ProfileTab() {
     <Spin spinning={loading}>
       <div style={{ maxWidth: 520 }}>
         <Text type="secondary" style={{ display: 'block', marginBottom: 20 }}>
-          Legal identity is used by the invoice extraction pipeline to determine invoice direction (incoming vs outgoing).
+          Правната идентичност се използва от тръбопровода за извличане на фактури за определяне на посоката.
         </Text>
         <Form form={form} layout="vertical" onFinish={handleSave}>
-          <Form.Item name="legalName" label="Legal name" rules={[{ required: true, message: 'Required' }]}>
-            <Input placeholder="Company legal name" />
+          <Form.Item name="legalName" label="Правно наименование" rules={[{ required: true, message: 'Required' }]}>
+            <Input placeholder="Правно наименование на компанията" />
           </Form.Item>
-          <Form.Item name="vatNumber" label="VAT number">
-            <Input placeholder="e.g. BG123456789" />
+          <Form.Item name="vatNumber" label="ДДС номер">
+            <Input placeholder="напр. BG123456789" />
           </Form.Item>
-          <Form.Item name="bulstat" label="Bulstat / registration number">
-            <Input placeholder="e.g. 123456789" />
+          <Form.Item name="bulstat" label="Булстат / рег. номер">
+            <Input placeholder="напр. 123456789" />
           </Form.Item>
-          <Form.Item name="aliases" label="Name aliases" extra="Comma-separated list of alternative company names used on documents">
-            <Input placeholder="e.g. Acme, ACME Corp, Acme Ltd." />
+          <Form.Item name="aliases" label="Алиаси" extra="Разделен със запетаи списък от алтернативни имена на компанията">
+            <Input placeholder="напр. Acme, ACME Corp, Acme Ltd." />
           </Form.Item>
           <Form.Item>
-            <Button type="primary" htmlType="submit" loading={saving}>Save profile</Button>
+            <Button type="primary" htmlType="submit" loading={saving}>Запиши профил</Button>
           </Form.Item>
         </Form>
       </div>
@@ -932,7 +955,7 @@ export default function InvoicesPage() {
       label: (
         <Space size={6}>
           <FileTextOutlined />
-          Invoices
+          Фактури
         </Space>
       ),
       children: <InvoicesTab />,
@@ -942,14 +965,14 @@ export default function InvoicesPage() {
       label: (
         <Space size={6}>
           <EyeOutlined />
-          Pending Review
+          За преглед
         </Space>
       ),
       children: <PendingReviewTab />,
     },
     {
       key: 'stats',
-      label: 'Stats',
+      label: 'Статистика',
       children: <StatsTab />,
     },
     {
@@ -957,7 +980,7 @@ export default function InvoicesPage() {
       label: (
         <Space size={6}>
           <SettingOutlined />
-          Company Profile
+          Профил
         </Space>
       ),
       children: <ProfileTab />,
@@ -968,7 +991,7 @@ export default function InvoicesPage() {
     <div style={{ padding: '24px 32px', height: '100%', overflow: 'auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 20, gap: 10 }}>
         <FileTextOutlined style={{ fontSize: 22, color: BLUE }} />
-        <Title level={4} style={{ margin: 0, color: BLUE }}>Invoices</Title>
+        <Title level={4} style={{ margin: 0, color: BLUE }}>Фактури</Title>
       </div>
       <Tabs
         activeKey={activeTab}

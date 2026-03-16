@@ -7,6 +7,7 @@ export class DatabaseConstruct extends Construct {
   public readonly chatHistoryTable: dynamodb.Table;
   public readonly tenantsTable: dynamodb.Table;
   public readonly invoicesTable: dynamodb.Table;
+  public readonly contractsTable: dynamodb.Table;
 
   constructor(scope: Construct, id: string) {
     super(scope, id);
@@ -48,6 +49,29 @@ export class DatabaseConstruct extends Construct {
 
     // GSI for duplicate detection (supplierVatNumber#invoiceNumber per tenant)
     this.invoicesTable.addGlobalSecondaryIndex({
+      indexName: 'dedupIndex',
+      partitionKey: { name: 'tenantId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'deduplicationKey', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.KEYS_ONLY,
+    });
+
+    this.contractsTable = new dynamodb.Table(this, 'ContractsTable', {
+      partitionKey: { name: 'tenantId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'contractId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    // GSI for date-range queries (by signingDate)
+    this.contractsTable.addGlobalSecondaryIndex({
+      indexName: 'dateIndex',
+      partitionKey: { name: 'tenantId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'signingDate', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    // GSI for duplicate detection (clientVatNumber#contractNumber per tenant)
+    this.contractsTable.addGlobalSecondaryIndex({
       indexName: 'dedupIndex',
       partitionKey: { name: 'tenantId', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'deduplicationKey', type: dynamodb.AttributeType.STRING },

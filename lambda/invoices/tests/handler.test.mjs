@@ -11,11 +11,13 @@ vi.mock('@aws-sdk/client-dynamodb', () => ({
   QueryCommand:        vi.fn(i => ({ input: i })),
   GetItemCommand:      vi.fn(i => ({ input: i })),
   UpdateItemCommand:   vi.fn(i => ({ input: i })),
+  DeleteItemCommand:   vi.fn(i => ({ input: i })),
 }));
 
 vi.mock('@aws-sdk/client-s3', () => ({
   S3Client: vi.fn(() => ({ send: mockS3Send })),
-  GetObjectCommand: vi.fn(i => ({ input: i })),
+  GetObjectCommand:    vi.fn(i => ({ input: i })),
+  DeleteObjectCommand: vi.fn(i => ({ input: i })),
 }));
 
 vi.mock('@aws-sdk/s3-request-presigner', () => ({
@@ -270,6 +272,61 @@ describe('invoices handler — tenant profile', () => {
     expect(res.statusCode).toBe(200);
     const data = JSON.parse(res.body);
     expect(data.legalName).toBe('Acme Ltd');
+  });
+});
+
+// ── DELETE /invoices/{invoiceId} ─────────────────────────────────────────────
+
+describe('invoices handler — DELETE /invoices/{invoiceId}', () => {
+  it('returns 404 when invoice not found', async () => {
+    mockDynamoSend.mockResolvedValue({ Item: undefined });
+    const { handler } = await import('../index.mjs');
+    const res = await handler(makeEvent({
+      method: 'DELETE',
+      path: '/tenants/acme/invoices/uuid-1',
+      pathParameters: { tenantId: 'acme', invoiceId: 'uuid-1' },
+    }));
+    expect(res.statusCode).toBe(404);
+    expect(JSON.parse(res.body).error).toMatch(/not found/i);
+  });
+
+  it('deletes DynamoDB record and all S3 files', async () => {
+    const item = marshalInvoice({ tenantId: 'acme', invoiceId: 'uuid-1', s3Key: 'acme/invoice.pdf', s3Bucket: 'docs-bucket', status: 'confirmed', documentType: 'invoice', direction: 'incoming' });
+    mockDynamoSend
+      .mockResolvedValueOnce({ Item: item })  // GetItem
+      .mockResolvedValueOnce({});              // DeleteItem
+    mockS3Send.mockResolvedValue({});
+    const { handler } = await import('../index.mjs');
+    const res = await handler(makeEvent({
+      method: 'DELETE',
+      path: '/tenants/acme/invoices/uuid-1',
+      pathParameters: { tenantId: 'acme', invoiceId: 'uuid-1' },
+    }));
+    expect(res.statusCode).toBe(200);
+    const data = JSON.parse(res.body);
+    expect(data.deleted).toBe(true);
+    expect(data.invoiceId).toBe('uuid-1');
+    // 4 S3 DeleteObjectCommand calls for the 4 derived keys
+    expect(mockS3Send).toHaveBeenCalledTimes(4);
+  });
+
+  it('still returns 200 when S3 delete partially fails (allSettled)', async () => {
+    const item = marshalInvoice({ tenantId: 'acme', invoiceId: 'uuid-1', s3Key: 'acme/invoice.pdf', s3Bucket: 'docs-bucket', status: 'confirmed', documentType: 'invoice', direction: 'incoming' });
+    mockDynamoSend
+      .mockResolvedValueOnce({ Item: item })  // GetItem
+      .mockResolvedValueOnce({});              // DeleteItem
+    // First S3 call fails, the rest succeed
+    mockS3Send
+      .mockRejectedValueOnce(new Error('NoSuchKey'))
+      .mockResolvedValue({});
+    const { handler } = await import('../index.mjs');
+    const res = await handler(makeEvent({
+      method: 'DELETE',
+      path: '/tenants/acme/invoices/uuid-1',
+      pathParameters: { tenantId: 'acme', invoiceId: 'uuid-1' },
+    }));
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).deleted).toBe(true);
   });
 });
 

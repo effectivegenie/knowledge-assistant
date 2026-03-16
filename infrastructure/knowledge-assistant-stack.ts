@@ -26,6 +26,7 @@ export class KnowledgeAssistantStack extends cdk.Stack {
       chatHistoryTable: database.chatHistoryTable,
       connectionsTable: database.connectionsTable,
       invoicesTable: database.invoicesTable,
+      contractsTable: database.contractsTable,
       knowledgeBase: knowledgeBase.knowledgeBase,
       docsDataSource: knowledgeBase.docsDataSource,
       userPool: auth.userPool,
@@ -41,6 +42,8 @@ export class KnowledgeAssistantStack extends cdk.Stack {
       adminFn: compute.adminFn,
       tenantAdminFn: compute.tenantAdminFn,
       invoicesFn: compute.invoicesFn,
+      contractsFn: compute.contractsFn,
+      documentsFn: compute.documentsFn,
       userPool: auth.userPool,
       userPoolClient: auth.userPoolClient,
     });

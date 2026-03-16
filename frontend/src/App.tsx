@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Layout, Card, Form, Input, Button, Spin, Typography, Space, Menu, Drawer, message, ConfigProvider } from 'antd';
-import { MailOutlined, LockOutlined, LogoutOutlined, TeamOutlined, UserOutlined, MessageOutlined, MenuOutlined, KeyOutlined, FileTextOutlined } from '@ant-design/icons';
+import { MailOutlined, LockOutlined, LogoutOutlined, TeamOutlined, UserOutlined, MessageOutlined, MenuOutlined, KeyOutlined, FileTextOutlined, FileProtectOutlined, FolderOutlined } from '@ant-design/icons';
 import { useAuth } from './auth/AuthContext';
 import ChatWidget from './components/ChatWidget';
 import AdminPage from './pages/AdminPage';
 import TenantAdminPage from './pages/TenantAdminPage';
 import InvoicesPage from './pages/InvoicesPage';
+import ContractsPage from './pages/ContractsPage';
+import DocumentsPage from './pages/DocumentsPage';
 
 const { Header, Content } = Layout;
 const { Text } = Typography;
@@ -78,7 +80,7 @@ const APP_THEME = {
   },
 };
 
-type View = 'chat' | 'admin' | 'tenant-admin' | 'invoices';
+type View = 'chat' | 'admin' | 'tenant-admin' | 'invoices' | 'contracts' | 'documents';
 
 function AuthPage() {
   const { signIn } = useAuth();
@@ -242,10 +244,12 @@ export default function App() {
   const menuItems = isRootAdmin
     ? [{ key: 'admin', icon: <TeamOutlined />, label: 'Tenants' }]
     : [
-        { key: 'chat', icon: <MessageOutlined />, label: 'Chat' },
+        { key: 'chat', icon: <MessageOutlined />, label: 'Чат' },
         ...(isTenantAdmin ? [
-          { key: 'tenant-admin', icon: <UserOutlined />, label: 'Users' },
-          { key: 'invoices', icon: <FileTextOutlined />, label: 'Invoices' },
+          { key: 'tenant-admin', icon: <UserOutlined />, label: 'Потребители' },
+          { key: 'invoices', icon: <FileTextOutlined />, label: 'Фактури' },
+          { key: 'contracts', icon: <FileProtectOutlined />, label: 'Договори' },
+          { key: 'documents', icon: <FolderOutlined />, label: 'Документи' },
         ] : []),
       ];
 
@@ -340,6 +344,8 @@ export default function App() {
           {view === 'admin' && <AdminPage />}
           {view === 'tenant-admin' && <TenantAdminPage />}
           {view === 'invoices' && <InvoicesPage />}
+          {view === 'contracts' && <ContractsPage />}
+          {view === 'documents' && <DocumentsPage />}
         </Content>
       </Layout>
     </ConfigProvider>

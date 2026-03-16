@@ -9,6 +9,8 @@ export interface AdminApiProps {
   adminFn: lambda.Function;
   tenantAdminFn: lambda.Function;
   invoicesFn: lambda.Function;
+  contractsFn: lambda.Function;
+  documentsFn: lambda.Function;
   userPool: cognito.UserPool;
   userPoolClient: cognito.UserPoolClient;
 }
@@ -27,7 +29,7 @@ export class AdminApiConstruct extends Construct {
   constructor(scope: Construct, id: string, props: AdminApiProps) {
     super(scope, id);
 
-    const { adminFn, tenantAdminFn, invoicesFn, userPool, userPoolClient } = props;
+    const { adminFn, tenantAdminFn, invoicesFn, contractsFn, documentsFn, userPool, userPoolClient } = props;
     const stack = cdk.Stack.of(this);
     const region = stack.region;
 
@@ -51,6 +53,22 @@ export class AdminApiConstruct extends Construct {
       type: 'aws_proxy',
       httpMethod: 'POST',
       uri: invoicesUri,
+      payloadFormatVersion: '2.0',
+    };
+
+    const contractsUri = `arn:aws:apigateway:${region}:lambda:path/2015-03-31/functions/${contractsFn.functionArn}/invocations`;
+    const documentsUri = `arn:aws:apigateway:${region}:lambda:path/2015-03-31/functions/${documentsFn.functionArn}/invocations`;
+
+    const contractsIntegration = {
+      type: 'aws_proxy',
+      httpMethod: 'POST',
+      uri: contractsUri,
+      payloadFormatVersion: '2.0',
+    };
+    const documentsIntegration = {
+      type: 'aws_proxy',
+      httpMethod: 'POST',
+      uri: documentsUri,
       payloadFormatVersion: '2.0',
     };
 
@@ -324,6 +342,17 @@ export class AdminApiConstruct extends Construct {
             responses: { '200': { description: 'Updated' }, '403': { description: 'Forbidden' }, '404': { description: 'Not found' } },
             'x-amazon-apigateway-integration': invoicesIntegration,
           },
+          delete: {
+            operationId: 'deleteInvoice',
+            summary: 'Delete invoice and associated S3 files',
+            security: securedWith,
+            parameters: [
+              { name: 'tenantId', in: 'path', required: true, schema: { type: 'string' } },
+              { name: 'invoiceId', in: 'path', required: true, schema: { type: 'string' } },
+            ],
+            responses: { '200': { description: 'Deleted' }, '403': { description: 'Forbidden' }, '404': { description: 'Not found' } },
+            'x-amazon-apigateway-integration': invoicesIntegration,
+          },
         },
         '/tenants/{tenantId}/invoices/{invoiceId}/view-url': {
           get: {
@@ -336,6 +365,115 @@ export class AdminApiConstruct extends Construct {
             ],
             responses: { '200': { description: 'View URL' }, '403': { description: 'Forbidden' }, '404': { description: 'Not found' } },
             'x-amazon-apigateway-integration': invoicesIntegration,
+          },
+        },
+        '/tenants/{tenantId}/contracts': {
+          get: {
+            operationId: 'listContracts',
+            summary: 'List contracts for a tenant',
+            security: securedWith,
+            parameters: [
+              { name: 'tenantId', in: 'path', required: true, schema: { type: 'string' } },
+              { name: 'page', in: 'query', schema: { type: 'integer', default: 0 } },
+              { name: 'pageSize', in: 'query', schema: { type: 'integer', default: 20 } },
+              { name: 'status', in: 'query', schema: { type: 'string' } },
+              { name: 'contractType', in: 'query', schema: { type: 'string' } },
+              { name: 'search', in: 'query', schema: { type: 'string' } },
+            ],
+            responses: { '200': { description: 'Contract list' }, '403': { description: 'Forbidden' } },
+            'x-amazon-apigateway-integration': contractsIntegration,
+          },
+        },
+        '/tenants/{tenantId}/contracts/stats': {
+          get: {
+            operationId: 'getContractStats',
+            summary: 'Get aggregated contract stats',
+            security: securedWith,
+            parameters: [
+              { name: 'tenantId', in: 'path', required: true, schema: { type: 'string' } },
+            ],
+            responses: { '200': { description: 'Stats' }, '403': { description: 'Forbidden' } },
+            'x-amazon-apigateway-integration': contractsIntegration,
+          },
+        },
+        '/tenants/{tenantId}/contracts/{contractId}': {
+          put: {
+            operationId: 'updateContract',
+            summary: 'Update contract status and fields',
+            security: securedWith,
+            parameters: [
+              { name: 'tenantId', in: 'path', required: true, schema: { type: 'string' } },
+              { name: 'contractId', in: 'path', required: true, schema: { type: 'string' } },
+            ],
+            requestBody: {
+              required: true,
+              content: { 'application/json': { schema: { type: 'object' } } },
+            },
+            responses: { '200': { description: 'Updated' }, '403': { description: 'Forbidden' }, '404': { description: 'Not found' } },
+            'x-amazon-apigateway-integration': contractsIntegration,
+          },
+          delete: {
+            operationId: 'deleteContract',
+            summary: 'Delete contract and associated S3 files',
+            security: securedWith,
+            parameters: [
+              { name: 'tenantId', in: 'path', required: true, schema: { type: 'string' } },
+              { name: 'contractId', in: 'path', required: true, schema: { type: 'string' } },
+            ],
+            responses: { '200': { description: 'Deleted' }, '403': { description: 'Forbidden' }, '404': { description: 'Not found' } },
+            'x-amazon-apigateway-integration': contractsIntegration,
+          },
+        },
+        '/tenants/{tenantId}/contracts/{contractId}/view-url': {
+          get: {
+            operationId: 'getContractViewUrl',
+            summary: 'Get presigned S3 GET URL for original contract document',
+            security: securedWith,
+            parameters: [
+              { name: 'tenantId', in: 'path', required: true, schema: { type: 'string' } },
+              { name: 'contractId', in: 'path', required: true, schema: { type: 'string' } },
+            ],
+            responses: { '200': { description: 'View URL' }, '403': { description: 'Forbidden' }, '404': { description: 'Not found' } },
+            'x-amazon-apigateway-integration': contractsIntegration,
+          },
+        },
+        '/tenants/{tenantId}/documents': {
+          get: {
+            operationId: 'listDocuments',
+            summary: 'List general documents for a tenant',
+            security: securedWith,
+            parameters: [
+              { name: 'tenantId', in: 'path', required: true, schema: { type: 'string' } },
+              { name: 'page', in: 'query', schema: { type: 'integer', default: 0 } },
+              { name: 'pageSize', in: 'query', schema: { type: 'integer', default: 20 } },
+              { name: 'search', in: 'query', schema: { type: 'string' } },
+            ],
+            responses: { '200': { description: 'Document list' }, '403': { description: 'Forbidden' } },
+            'x-amazon-apigateway-integration': documentsIntegration,
+          },
+          delete: {
+            operationId: 'deleteDocument',
+            summary: 'Delete a document and all S3 sidecars',
+            security: securedWith,
+            parameters: [
+              { name: 'tenantId', in: 'path', required: true, schema: { type: 'string' } },
+              { name: 'key', in: 'query', required: true, schema: { type: 'string' } },
+            ],
+            responses: { '200': { description: 'Deleted' }, '403': { description: 'Forbidden' } },
+            'x-amazon-apigateway-integration': documentsIntegration,
+          },
+        },
+        '/tenants/{tenantId}/documents/view-url': {
+          get: {
+            operationId: 'getDocumentViewUrl',
+            summary: 'Get presigned S3 GET URL for a general document',
+            security: securedWith,
+            parameters: [
+              { name: 'tenantId', in: 'path', required: true, schema: { type: 'string' } },
+              { name: 'key', in: 'query', required: true, schema: { type: 'string' } },
+            ],
+            responses: { '200': { description: 'View URL' }, '403': { description: 'Forbidden' } },
+            'x-amazon-apigateway-integration': documentsIntegration,
           },
         },
       },
@@ -359,6 +497,8 @@ export class AdminApiConstruct extends Construct {
     adminFn.addPermission('ApiGwAdminInvoke', { principal: apigwPrincipal, sourceArn: sourceArnPrefix });
     tenantAdminFn.addPermission('ApiGwTenantAdminInvoke', { principal: apigwPrincipal, sourceArn: sourceArnPrefix });
     invoicesFn.addPermission('ApiGwInvoicesInvoke', { principal: apigwPrincipal, sourceArn: sourceArnPrefix });
+    contractsFn.addPermission('ApiGwContractsInvoke', { principal: apigwPrincipal, sourceArn: sourceArnPrefix });
+    documentsFn.addPermission('ApiGwDocumentsInvoke', { principal: apigwPrincipal, sourceArn: sourceArnPrefix });
 
     this.apiUrl = `https://${api.ref}.execute-api.${region}.amazonaws.com`;
   }

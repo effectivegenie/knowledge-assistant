@@ -1,5 +1,5 @@
-import { DynamoDBClient, QueryCommand, UpdateItemCommand, GetItemCommand } from '@aws-sdk/client-dynamodb';
-import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import { DynamoDBClient, QueryCommand, UpdateItemCommand, GetItemCommand, DeleteItemCommand } from '@aws-sdk/client-dynamodb';
+import { S3Client, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 const dynamo = new DynamoDBClient({});
@@ -286,6 +286,46 @@ export const handler = async (event) => {
       if (err.name === 'ConditionalCheckFailedException') return jsonResponse(404, { error: 'Invoice not found' });
       log.error('Failed to update invoice', { tenantId: tenantIdFromPath, invoiceId, error: err.message });
       return jsonResponse(500, { error: 'Failed to update invoice' });
+    }
+  }
+
+  // ── DELETE /tenants/{tenantId}/invoices/{invoiceId} ───────────────────────
+  if (method === 'DELETE' && invoiceId && !path.endsWith('/profile')) {
+    try {
+      const getResp = await dynamo.send(new GetItemCommand({
+        TableName: INVOICES_TABLE,
+        Key: { tenantId: { S: tenantIdFromPath }, invoiceId: { S: invoiceId } },
+      }));
+      if (!getResp.Item) {
+        log.warn('Invoice not found for deletion', { tenantId: tenantIdFromPath, invoiceId });
+        return jsonResponse(404, { error: 'Invoice not found' });
+      }
+      const inv = unmarshalItem(getResp.Item);
+      const bucket = inv.s3Bucket || DOCS_BUCKET_NAME;
+      const s3Key  = inv.s3Key;
+
+      await dynamo.send(new DeleteItemCommand({
+        TableName: INVOICES_TABLE,
+        Key: { tenantId: { S: tenantIdFromPath }, invoiceId: { S: invoiceId } },
+      }));
+
+      if (s3Key) {
+        const keysToDelete = [
+          s3Key,
+          `${s3Key}.metadata.json`,
+          `${s3Key}.kb.txt`,
+          `${s3Key}.kb.txt.metadata.json`,
+        ];
+        await Promise.allSettled(
+          keysToDelete.map(k => s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: k }))),
+        );
+      }
+
+      log.info('Invoice deleted', { tenantId: tenantIdFromPath, invoiceId });
+      return jsonResponse(200, { invoiceId, deleted: true });
+    } catch (err) {
+      log.error('Failed to delete invoice', { tenantId: tenantIdFromPath, invoiceId, error: err.message });
+      return jsonResponse(500, { error: 'Failed to delete invoice' });
     }
   }
 

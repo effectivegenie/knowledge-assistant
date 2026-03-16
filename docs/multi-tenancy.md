@@ -82,6 +82,43 @@ Stores extracted invoice records produced by the invoice-processor Lambda.
 
 `dedupIndex` projects `KEYS_ONLY`. When both `supplierVatNumber` and `invoiceNumber` are extracted, the document-processor queries this index to prevent saving the same invoice twice.
 
+### ContractsTable
+
+DynamoDB table for contracts extracted from category=contract documents.
+
+| Attribute | Type | Description |
+|---|---|---|
+| `tenantId` (PK) | String | Tenant identifier |
+| `contractId` (SK) | String | UUID — unique contract identifier |
+| `status` | String | `extracted` \| `review_needed` \| `confirmed` \| `rejected` |
+| `documentType` | String | `contract` \| `amendment` \| `annex` |
+| `contractNumber` | String | Contract reference number |
+| `signingDate` | String | YYYY-MM-DD — date contract was signed |
+| `startDate` | String | YYYY-MM-DD — contract effective date |
+| `endDate` | String | YYYY-MM-DD — expiry date; absent means indefinite |
+| `clientName` | String | Client party name |
+| `clientVatNumber` | String | Client VAT/tax number |
+| `counterpartyName` | String | Our company's name as it appears in the contract |
+| `counterpartyVatNumber` | String | Our company's VAT number |
+| `value` | Number | Monetary value |
+| `currency` | String | `BGN` \| `EUR` \| `USD` |
+| `contractType` | String | `services` \| `rental` \| `supply` \| `employment` \| `nda` \| `framework` \| `other` |
+| `deduplicationKey` | String | `{clientVatNumber}#{contractNumber}` — used by dedupIndex GSI |
+| `confidence` | Number | 0–1 Vision extraction confidence |
+| `extractedAt` | String | ISO 8601 timestamp |
+| `confirmedAt` | String | ISO 8601 timestamp — set when status becomes confirmed |
+| `s3Key` | String | S3 object key of the source document |
+| `s3Bucket` | String | S3 bucket name |
+
+#### GSIs
+
+| Index | PK | SK | Purpose |
+|---|---|---|---|
+| `dateIndex` | `tenantId` | `signingDate` | Date-range queries |
+| `dedupIndex` | `tenantId` | `deduplicationKey` | Duplicate detection |
+
+Activity status (active/expiring/expired) is computed dynamically from `endDate` at query time — not stored.
+
 Also note: `TenantsTable` is extended with legal identity fields used by the extraction pipeline:
 
 | Attribute | Type | Notes |
