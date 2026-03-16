@@ -169,14 +169,6 @@ export const handler = async (event) => {
 
         log.debug('RAG after tenant isolation', { tenantId, count: results.length });
 
-        // Diagnostic: show groups distribution before filter
-        log.debug('RAG groups distribution', {
-          tenantId,
-          total: results.length,
-          noGroupsMeta: results.filter(r => r.metadata?.groups == null).length,
-          byGroups: results.map(r => ({ raw: r.metadata?.groups, uri: r.location?.s3Location?.uri?.split('/').pop() })),
-        });
-
         // Group access control — post-filter for non-admin users with assigned groups.
         // listContains is not supported on S3 Vectors so this must run in Lambda.
         // S3 Vectors returns array metadata as a JSON string '["HR","general"]' — must parse.
