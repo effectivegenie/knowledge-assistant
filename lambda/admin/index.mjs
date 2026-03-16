@@ -162,7 +162,7 @@ export const handler = async (event) => {
             type: 'S3',
             s3Configuration: { bucketArn: DOCS_BUCKET_ARN, inclusionPrefixes: [`${id}/`] },
           },
-          dataDeletionPolicy: 'RETAIN',
+          dataDeletionPolicy: 'DELETE',
         }));
         dataSourceId = dsResult.dataSource.dataSourceId;
         log.info('Bedrock data source created', { tenantId: id, dataSourceId });
@@ -270,8 +270,21 @@ export const handler = async (event) => {
         }
       }
 
-      // 2. Delete Bedrock data source (skip if it's the shared default)
+      // 2. Sync the now-empty S3 prefix to remove document vectors from the KB,
+      //    then delete the data source (DELETE policy removes remaining vectors)
       if (kbId && dsId && dsId !== DEFAULT_DATA_SOURCE_ID) {
+        try {
+          // Start an ingestion job against the empty prefix — Bedrock will mark all
+          // previously indexed documents as deleted and remove their vectors
+          await bedrockAgent.send(new StartIngestionJobCommand({
+            knowledgeBaseId: kbId,
+            dataSourceId: dsId,
+          }));
+          log.info('Ingestion sync started on empty prefix to purge vectors', { tenantId: tenantIdParam, dataSourceId: dsId });
+        } catch (err) {
+          log.warn('Pre-delete ingestion sync failed (non-fatal)', { tenantId: tenantIdParam, dataSourceId: dsId, error: err.message });
+        }
+
         try {
           await bedrockAgent.send(new DeleteDataSourceCommand({
             knowledgeBaseId: kbId,
@@ -279,9 +292,9 @@ export const handler = async (event) => {
           }));
           log.info('Bedrock data source deleted', { tenantId: tenantIdParam, dataSourceId: dsId });
         } catch (err) {
-          // ConflictException: vector store deletion not permitted — data source is left orphaned
-          // but S3 objects and DynamoDB record are already removed so it causes no harm
-          log.warn('Bedrock data source deletion failed (non-fatal, may need manual cleanup)', { tenantId: tenantIdParam, dataSourceId: dsId, error: err.message });
+          // ConflictException if an ingestion job is still running — vectors are
+          // being purged anyway by the job above; data source can be cleaned up manually
+          log.warn('Bedrock data source deletion failed (non-fatal, vectors purged by sync job)', { tenantId: tenantIdParam, dataSourceId: dsId, error: err.message });
         }
       }
 

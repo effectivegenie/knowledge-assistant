@@ -163,6 +163,15 @@ export default function TenantAdminPage() {
         if (!res.ok) throw new Error(data.error || res.statusText);
         const { url, metadataUrl } = data;
 
+        // Upload metadata BEFORE the document so it's already in S3 when the
+        // S3-triggered ingestion job runs (Bedrock reads metadata during indexing)
+        const metadata = JSON.stringify({ metadataAttributes: { groups: currentGroups } });
+        await fetch(metadataUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: metadata,
+        });
+
         await new Promise<void>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
           xhr.upload.onprogress = (e) => {
@@ -177,16 +186,6 @@ export default function TenantAdminPage() {
           xhr.setRequestHeader('Content-Type', f.type || 'application/octet-stream');
           xhr.send(f);
         });
-
-        // Upload metadata file with group tags
-        if (metadataUrl && currentGroups.length > 0) {
-          const metadata = JSON.stringify({ metadataAttributes: { groups: currentGroups } });
-          await fetch(metadataUrl, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: metadata,
-          });
-        }
 
         onSuccess?.(null);
       } catch (e) {

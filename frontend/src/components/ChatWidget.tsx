@@ -166,7 +166,7 @@ export default function ChatWidget() {
                   }}
                 />
               )}
-              <div style={{ maxWidth: msg.role === 'assistant' ? '75%' : undefined }}>
+              <div style={{ maxWidth: msg.role === 'assistant' ? '90%' : undefined }}>
                 <div
                   className={`message-bubble ${
                     msg.role === 'user' ? 'message-user' : 'message-assistant'
