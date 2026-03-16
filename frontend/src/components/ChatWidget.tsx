@@ -59,7 +59,6 @@ function CitationsPanel({ citations }: { citations: Citation[] }) {
       size="small"
       items={items}
       style={{ marginTop: 6, border: 'none', background: 'transparent' }}
-      styles={{ header: { padding: '4px 0', background: 'transparent' } }}
     />
   );
 }
