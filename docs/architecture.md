@@ -133,17 +133,81 @@ Both `document-processor` and `sync` receive `OBJECT_CREATED` events via a share
 
 The stack is defined in `infrastructure/` using AWS CDK v2 and `@cdklabs/generative-ai-cdk-constructs`. Each domain is encapsulated in its own CDK `Construct`:
 
+```mermaid
+graph TD
+    Stack["KnowledgeAssistantStack"]
+
+    Stack --> Storage["StorageConstruct\n── S3 docs bucket\n── S3 frontend bucket"]
+    Stack --> Auth["AuthConstruct\n── Cognito User Pool\n── groups\n── pre-token-gen Lambda"]
+    Stack --> KB["KnowledgeBaseConstruct\n── S3 Vectors index\n── Bedrock KB\n── default data source"]
+    Stack --> DB["DatabaseConstruct\n── ConnectionsTable\n── ChatHistoryTable\n── TenantsTable\n── InvoicesTable"]
+    Stack --> Compute["ComputeConstruct\n── 9 Lambda functions\n── SNS fanout topic\n── IAM policies"]
+    Stack --> WS["WebSocketApiConstruct\n── API GW WebSocket\n── $connect / sendMessage / history / $disconnect routes"]
+    Stack --> API["AdminApiConstruct\n── API GW HTTP\n── OpenAPI 3.0 spec\n── JWT authorizer"]
+    Stack --> FE["FrontendConstruct\n── CloudFront distribution\n── OAC for S3"]
+
+    Storage -->|docsBucket| Compute
+    Storage -->|docsBucket| API
+    Auth -->|userPool| Compute
+    Auth -->|userPool| API
+    KB -->|knowledgeBase| Compute
+    DB -->|all tables| Compute
+    Compute -->|Lambda ARNs| WS
+    Compute -->|Lambda ARNs| API
+```
+
 | Construct file | Responsibility |
 |---|---|
 | `constructs/storage.construct.ts` | S3 docs bucket (with CORS) + frontend bucket |
 | `constructs/auth.construct.ts` | Cognito User Pool, groups, pre-token-gen Lambda |
 | `constructs/knowledge-base.construct.ts` | S3 Vectors index, Bedrock KB, default data source |
-| `constructs/database.construct.ts` | DynamoDB — connections, chat history, tenants |
-| `constructs/compute.construct.ts` | All Lambda functions + IAM policies + S3 event triggers |
+| `constructs/database.construct.ts` | DynamoDB — connections, chat history, tenants, invoices |
+| `constructs/compute.construct.ts` | All Lambda functions + IAM policies + SNS topic + S3 event triggers |
 | `constructs/websocket-api.construct.ts` | API Gateway WebSocket + routes + Lambda permissions |
 | `constructs/admin-api.construct.ts` | HTTP API defined via **OpenAPI 3.0 spec** (see below) |
 | `constructs/frontend.construct.ts` | CloudFront distribution with OAC |
 | `knowledge-assistant-stack.ts` | Root stack — composes all constructs, emits CfnOutputs |
+
+## Data Flow — Invoice Processing
+
+```mermaid
+sequenceDiagram
+    actor Admin
+    participant Browser
+    participant HTTP as API GW HTTP
+    participant TenantAdmin as Lambda tenant-admin
+    participant S3 as S3 Docs Bucket
+    participant SNS as SNS Topic
+    participant Sync as Lambda sync
+    participant DP as Lambda document-processor
+    participant Textract as Amazon Textract
+    participant Claude as Claude Haiku
+    participant DDB as DynamoDB
+
+    Admin->>Browser: upload invoice.pdf (category=invoice)
+    Browser->>HTTP: POST /tenants/{id}/upload-url
+    HTTP->>TenantAdmin: invoke
+    TenantAdmin-->>Browser: {url, metadataUrl, category:"invoice"}
+    Browser->>S3: PUT invoice.pdf.metadata.json
+    Browser->>S3: PUT invoice.pdf
+
+    S3--)SNS: OBJECT_CREATED (metadata.json)
+    SNS--)Sync: invoke → StartIngestionJob
+    SNS--)DP: invoke → skip (.metadata.json)
+
+    S3--)SNS: OBJECT_CREATED (invoice.pdf)
+    SNS--)Sync: invoke → StartIngestionJob (RAG indexing)
+    SNS--)DP: invoke
+
+    DP->>S3: read invoice.pdf.metadata.json
+    DP->>DDB: read tenant profile (legalName, vatNumber, aliases)
+    DP->>Textract: AnalyzeExpense(invoice.pdf)
+    Textract-->>DP: SummaryFields + confidence
+    DP->>Claude: normalize fields to structured JSON
+    Claude-->>DP: {invoiceNumber, issueDate, amountTotal, direction, confidence}
+    DP->>DDB: QueryCommand (dedupIndex) — check duplicate
+    DP->>DDB: PutItemCommand → InvoicesTable (status: extracted | review_needed)
+```
 
 ## Admin API — OpenAPI Integration
 
