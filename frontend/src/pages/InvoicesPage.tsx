@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Tabs, Table, Button, Input, Tag, Space, Typography, Drawer, Descriptions,
+  Tabs, Table, Button, Input, InputNumber, Tag, Space, Typography, Drawer, Descriptions,
   Row, Col, Statistic, DatePicker, Popconfirm, message, Spin, Select, Form,
 } from 'antd';
 import {
@@ -94,6 +94,19 @@ function useInvoicesApi() {
     return res.json();
   }, [base, idToken]);
 
+  const updateInvoiceFields = useCallback(async (invoiceId: string, body: Record<string, unknown>) => {
+    const res = await fetch(`${base}/invoices/${encodeURIComponent(invoiceId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      throw new Error(d.error || res.statusText);
+    }
+    return res.json();
+  }, [base, idToken]);
+
   const getViewUrl = useCallback(async (invoiceId: string): Promise<string> => {
     const res = await fetch(`${base}/invoices/${encodeURIComponent(invoiceId)}/view-url`, {
       headers: { Authorization: `Bearer ${idToken}` },
@@ -103,7 +116,7 @@ function useInvoicesApi() {
     return d.url;
   }, [base, idToken]);
 
-  return { tenantId, idToken, base, updateStatus, getViewUrl };
+  return { tenantId, idToken, base, updateStatus, updateInvoiceFields, getViewUrl };
 }
 
 // ── Invoices Tab ─────────────────────────────────────────────────────────────
@@ -377,7 +390,7 @@ function InvoicesTab() {
 // ── Pending Review Tab ────────────────────────────────────────────────────────
 
 function PendingReviewTab() {
-  const { idToken, base, updateStatus, getViewUrl } = useInvoicesApi();
+  const { idToken, base, updateStatus, updateInvoiceFields, getViewUrl } = useInvoicesApi();
   const [items, setItems]           = useState<Invoice[]>([]);
   const [loading, setLoading]       = useState(false);
   const [search, setSearch]         = useState('');
@@ -387,6 +400,7 @@ function PendingReviewTab() {
   const [actionLoading, setActionLoading]   = useState(false);
   const [selected, setSelected]     = useState<string[]>([]);
   const [bulkLoading, setBulkLoading] = useState(false);
+  const [reviewForm] = Form.useForm();
 
   const fetchPending = useCallback(async () => {
     setLoading(true);
@@ -407,6 +421,20 @@ function PendingReviewTab() {
 
   const openReview = async (inv: Invoice) => {
     setReviewing(inv);
+    reviewForm.setFieldsValue({
+      invoiceNumber:     inv.invoiceNumber     ?? null,
+      documentType:      inv.documentType      ?? 'invoice',
+      direction:         inv.direction         ?? 'incoming',
+      issueDate:         inv.issueDate ? dayjs(inv.issueDate) : null,
+      dueDate:           inv.dueDate   ? dayjs(inv.dueDate)   : null,
+      supplierName:      inv.supplierName      ?? null,
+      supplierVatNumber: inv.supplierVatNumber ?? null,
+      clientName:        inv.clientName        ?? null,
+      clientVatNumber:   inv.clientVatNumber   ?? null,
+      amountNet:         inv.amountNet         ?? null,
+      amountVat:         inv.amountVat         ?? null,
+      amountTotal:       inv.amountTotal       ?? null,
+    });
     setViewUrl(null);
     setViewUrlLoading(true);
     try {
@@ -419,11 +447,35 @@ function PendingReviewTab() {
     }
   };
 
-  const doAction = async (invoiceId: string, status: 'confirmed' | 'rejected') => {
+  const doConfirm = async (values: Record<string, unknown>) => {
+    if (!reviewing) return;
     setActionLoading(true);
     try {
-      await updateStatus(invoiceId, status);
-      message.success(status === 'confirmed' ? 'Marked as invoice' : 'Rejected');
+      const payload: Record<string, unknown> = { status: 'confirmed' };
+      for (const f of ['invoiceNumber', 'documentType', 'direction', 'supplierName', 'supplierVatNumber', 'clientName', 'clientVatNumber']) {
+        if (values[f] != null && values[f] !== '') payload[f] = values[f];
+      }
+      if (values.issueDate) payload.issueDate = (values.issueDate as dayjs.Dayjs).format('YYYY-MM-DD');
+      if (values.dueDate)   payload.dueDate   = (values.dueDate   as dayjs.Dayjs).format('YYYY-MM-DD');
+      for (const f of ['amountNet', 'amountVat', 'amountTotal']) {
+        if (values[f] != null) payload[f] = values[f];
+      }
+      await updateInvoiceFields(reviewing.invoiceId, payload);
+      message.success('Marked as invoice');
+      setReviewing(null);
+      fetchPending();
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : 'Action failed');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const doReject = async (invoiceId: string) => {
+    setActionLoading(true);
+    try {
+      await updateStatus(invoiceId, 'rejected');
+      message.success('Rejected');
       setReviewing(null);
       fetchPending();
     } catch (e) {
@@ -548,7 +600,7 @@ function PendingReviewTab() {
             <Space style={{ float: 'right' }}>
               <Popconfirm
                 title="Mark as not an invoice? The record will be rejected."
-                onConfirm={() => doAction(reviewing.invoiceId, 'rejected')}
+                onConfirm={() => doReject(reviewing.invoiceId)}
                 okText="Yes, reject"
                 okButtonProps={{ danger: true }}
               >
@@ -560,7 +612,7 @@ function PendingReviewTab() {
                 type="primary"
                 icon={<CheckOutlined />}
                 loading={actionLoading}
-                onClick={() => doAction(reviewing.invoiceId, 'confirmed')}
+                onClick={() => reviewForm.submit()}
               >
                 Yes, it's an invoice
               </Button>
@@ -570,28 +622,103 @@ function PendingReviewTab() {
       >
         {reviewing && (
           <>
-            <Descriptions column={1} bordered size="small" labelStyle={{ width: 150, color: BLUE }}>
-              <Descriptions.Item label="Invoice #">{reviewing.invoiceNumber || '—'}</Descriptions.Item>
-              <Descriptions.Item label="Type"><Tag>{reviewing.documentType}</Tag></Descriptions.Item>
-              <Descriptions.Item label="Direction"><Tag color={DIR_COLOR[reviewing.direction]}>{reviewing.direction}</Tag></Descriptions.Item>
-              <Descriptions.Item label="Issue date">{fmtDate(reviewing.issueDate)}</Descriptions.Item>
-              <Descriptions.Item label="Due date">{fmtDate(reviewing.dueDate)}</Descriptions.Item>
-              <Descriptions.Item label="Supplier">{reviewing.supplierName || '—'}</Descriptions.Item>
-              <Descriptions.Item label="Supplier VAT">{reviewing.supplierVatNumber || '—'}</Descriptions.Item>
-              <Descriptions.Item label="Client">{reviewing.clientName || '—'}</Descriptions.Item>
-              <Descriptions.Item label="Net">{fmtEur(reviewing.amountNet)}</Descriptions.Item>
-              <Descriptions.Item label="VAT">{fmtEur(reviewing.amountVat)}</Descriptions.Item>
-              <Descriptions.Item label="Total"><strong>{fmtEur(reviewing.amountTotal)}</strong></Descriptions.Item>
-              <Descriptions.Item label="Confidence">
-                {reviewing.confidence != null ? (
-                  <Tag color={reviewing.confidence >= 0.5 ? 'orange' : 'red'}>
-                    {Math.round(reviewing.confidence * 100)}%
-                  </Tag>
-                ) : '—'}
-              </Descriptions.Item>
-              <Descriptions.Item label="Extracted at">{fmtDate(reviewing.extractedAt)}</Descriptions.Item>
-            </Descriptions>
-            <div style={{ marginTop: 16 }}>
+            {reviewing.confidence != null && (
+              <div style={{ marginBottom: 12 }}>
+                <Tag color={reviewing.confidence >= 0.7 ? 'blue' : reviewing.confidence >= 0.5 ? 'orange' : 'red'}>
+                  Confidence: {Math.round(reviewing.confidence * 100)}%
+                </Tag>
+                <Text type="secondary" style={{ fontSize: 12, marginLeft: 8 }}>
+                  Extracted {fmtDate(reviewing.extractedAt)} — correct any fields before confirming
+                </Text>
+              </div>
+            )}
+            <Form
+              form={reviewForm}
+              layout="vertical"
+              size="small"
+              onFinish={doConfirm}
+            >
+              <Row gutter={12}>
+                <Col span={12}>
+                  <Form.Item name="invoiceNumber" label="Invoice #">
+                    <Input placeholder="e.g. INV-001" />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item name="documentType" label="Type">
+                    <Select options={[
+                      { value: 'invoice',     label: 'Invoice' },
+                      { value: 'proforma',    label: 'Proforma' },
+                      { value: 'credit_note', label: 'Credit note' },
+                    ]} />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Row gutter={12}>
+                <Col span={12}>
+                  <Form.Item name="direction" label="Direction">
+                    <Select options={[
+                      { value: 'incoming', label: 'Incoming' },
+                      { value: 'outgoing', label: 'Outgoing' },
+                    ]} />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item name="issueDate" label="Issue date">
+                    <DatePicker style={{ width: '100%' }} format="DD MMM YYYY" />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Row gutter={12}>
+                <Col span={12}>
+                  <Form.Item name="dueDate" label="Due date">
+                    <DatePicker style={{ width: '100%' }} format="DD MMM YYYY" />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Row gutter={12}>
+                <Col span={12}>
+                  <Form.Item name="supplierName" label="Supplier">
+                    <Input />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item name="supplierVatNumber" label="Supplier VAT">
+                    <Input placeholder="e.g. BG123456789" />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Row gutter={12}>
+                <Col span={12}>
+                  <Form.Item name="clientName" label="Client">
+                    <Input />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item name="clientVatNumber" label="Client VAT">
+                    <Input />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Row gutter={12}>
+                <Col span={8}>
+                  <Form.Item name="amountNet" label="Net">
+                    <InputNumber style={{ width: '100%' }} precision={2} prefix="€" />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item name="amountVat" label="VAT">
+                    <InputNumber style={{ width: '100%' }} precision={2} prefix="€" />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item name="amountTotal" label="Total">
+                    <InputNumber style={{ width: '100%' }} precision={2} prefix="€" />
+                  </Form.Item>
+                </Col>
+              </Row>
+            </Form>
+            <div style={{ marginTop: 8 }}>
               {viewUrlLoading ? (
                 <Spin size="small" />
               ) : viewUrl ? (
@@ -600,6 +727,7 @@ function PendingReviewTab() {
                   href={viewUrl}
                   target="_blank"
                   rel="noopener noreferrer"
+                  size="small"
                 >
                   View original document
                 </Button>

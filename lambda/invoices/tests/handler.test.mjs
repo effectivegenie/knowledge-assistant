@@ -154,6 +154,57 @@ describe('invoices handler — PUT /invoices/{invoiceId}', () => {
     }));
     expect(res.statusCode).toBe(404);
   });
+
+  it('includes editable string and numeric fields in update expression', async () => {
+    mockDynamoSend.mockResolvedValue({});
+    const { handler } = await import('../index.mjs');
+    const res = await handler(makeEvent({
+      method: 'PUT',
+      path: '/tenants/acme/invoices/uuid-1',
+      pathParameters: { tenantId: 'acme', invoiceId: 'uuid-1' },
+      body: { status: 'confirmed', invoiceNumber: 'INV-999', supplierName: 'Supplier Ltd', amountTotal: 1500 },
+    }));
+    expect(res.statusCode).toBe(200);
+    const updateCall = mockDynamoSend.mock.calls.find(([cmd]) => cmd.input?.UpdateExpression);
+    expect(updateCall[0].input.ExpressionAttributeValues[':invoiceNumber']).toEqual({ S: 'INV-999' });
+    expect(updateCall[0].input.ExpressionAttributeValues[':supplierName']).toEqual({ S: 'Supplier Ltd' });
+    expect(updateCall[0].input.ExpressionAttributeValues[':amountTotal']).toEqual({ N: '1500' });
+  });
+
+  it('recomputes deduplicationKey when supplierVatNumber + invoiceNumber both provided', async () => {
+    mockDynamoSend.mockResolvedValue({});
+    const { handler } = await import('../index.mjs');
+    await handler(makeEvent({
+      method: 'PUT',
+      path: '/tenants/acme/invoices/uuid-1',
+      pathParameters: { tenantId: 'acme', invoiceId: 'uuid-1' },
+      body: { status: 'confirmed', supplierVatNumber: 'BG123', invoiceNumber: 'INV-001' },
+    }));
+    const updateCall = mockDynamoSend.mock.calls.find(([cmd]) => cmd.input?.UpdateExpression);
+    expect(updateCall[0].input.ExpressionAttributeValues[':dk']).toEqual({ S: 'BG123#INV-001' });
+  });
+
+  it('returns 400 for invalid direction', async () => {
+    const { handler } = await import('../index.mjs');
+    const res = await handler(makeEvent({
+      method: 'PUT',
+      path: '/tenants/acme/invoices/uuid-1',
+      pathParameters: { tenantId: 'acme', invoiceId: 'uuid-1' },
+      body: { status: 'confirmed', direction: 'sideways' },
+    }));
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('returns 400 for invalid documentType', async () => {
+    const { handler } = await import('../index.mjs');
+    const res = await handler(makeEvent({
+      method: 'PUT',
+      path: '/tenants/acme/invoices/uuid-1',
+      pathParameters: { tenantId: 'acme', invoiceId: 'uuid-1' },
+      body: { status: 'confirmed', documentType: 'receipt' },
+    }));
+    expect(res.statusCode).toBe(400);
+  });
 });
 
 // ── GET /invoices/{invoiceId}/view-url ───────────────────────────────────────

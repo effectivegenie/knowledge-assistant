@@ -286,19 +286,37 @@ Invoice `status` lifecycle: `pending` → `extracted` | `review_needed` → `con
 
 ### `PUT /tenants/{tenantId}/invoices/{invoiceId}`
 
-Update invoice status. Returns 404 if invoice does not exist.
+Update invoice status and optionally correct extracted fields. Returns 404 if invoice does not exist.
 
 **Request body**
 ```json
-{ "status": "confirmed" }
+{
+  "status": "confirmed",
+  "invoiceNumber": "INV-001",
+  "documentType": "invoice",
+  "direction": "incoming",
+  "issueDate": "2024-01-15",
+  "dueDate": "2024-02-15",
+  "supplierName": "Supplier Ltd",
+  "supplierVatNumber": "BG123456789",
+  "clientName": "Acme Ltd",
+  "clientVatNumber": "BG999999999",
+  "amountNet": 1000.00,
+  "amountVat": 200.00,
+  "amountTotal": 1200.00
+}
 ```
+
+Only `status` is required. All other fields are optional — omit them to leave them unchanged.
+
+`direction` must be `incoming` or `outgoing`. `documentType` must be `invoice`, `proforma`, or `credit_note`.
+
+When `status` is set to `confirmed` or `paid`, a timestamp (`confirmedAt` / `paidAt`) is automatically recorded. When both `supplierVatNumber` and `invoiceNumber` are provided, the deduplication key is recomputed.
 
 **Response 200**
 ```json
 { "invoiceId": "uuid", "status": "confirmed" }
 ```
-
-When status is set to `confirmed` or `paid`, a timestamp (`confirmedAt` / `paidAt`) is automatically recorded.
 
 ---
 

@@ -222,10 +222,6 @@ export class ComputeConstruct extends Construct {
     tenantsTable.grantReadData(this.documentProcessorFn);
     docsBucket.grantRead(this.documentProcessorFn);
     this.documentProcessorFn.addToRolePolicy(new iam.PolicyStatement({
-      actions: ['textract:AnalyzeExpense'],
-      resources: ['*'],
-    }));
-    this.documentProcessorFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
       resources: [
         `arn:aws:bedrock:${stack.region}:${stack.account}:inference-profile/eu.anthropic.claude-haiku-4-5-20251001-v1:0`,

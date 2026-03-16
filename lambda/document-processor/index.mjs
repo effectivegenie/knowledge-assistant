@@ -1,13 +1,11 @@
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
-import { TextractClient, AnalyzeExpenseCommand } from '@aws-sdk/client-textract';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { DynamoDBClient, PutItemCommand, QueryCommand, GetItemCommand } from '@aws-sdk/client-dynamodb';
 import { randomUUID } from 'crypto';
 
-const s3       = new S3Client({});
-const textract = new TextractClient({});
-const bedrock  = new BedrockRuntimeClient({});
-const dynamo   = new DynamoDBClient({});
+const s3     = new S3Client({});
+const bedrock = new BedrockRuntimeClient({});
+const dynamo  = new DynamoDBClient({});
 
 const log = {
   info:  (msg, ctx = {}) => console.log(JSON.stringify({ level: 'INFO',  msg, ...ctx })),
@@ -16,15 +14,33 @@ const log = {
   error: (msg, ctx = {}) => console.error(JSON.stringify({ level: 'ERROR', msg, ...ctx })),
 };
 
-const INVOICES_TABLE      = process.env.INVOICES_TABLE;
-const TENANTS_TABLE       = process.env.TENANTS_TABLE;
-const MODEL_ID            = process.env.MODEL_ID || 'eu.anthropic.claude-haiku-4-5-20251001-v1:0';
+const INVOICES_TABLE       = process.env.INVOICES_TABLE;
+const TENANTS_TABLE        = process.env.TENANTS_TABLE;
+const MODEL_ID             = process.env.MODEL_ID || 'eu.anthropic.claude-haiku-4-5-20251001-v1:0';
 const CONFIDENCE_THRESHOLD = 0.7;
+
+const SUPPORTED_MEDIA_TYPES = {
+  pdf:  'application/pdf',
+  png:  'image/png',
+  jpg:  'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif:  'image/gif',
+  webp: 'image/webp',
+  tiff: 'image/tiff',
+  tif:  'image/tiff',
+  bmp:  'image/png', // Bedrock doesn't accept BMP; falls back to PDF path gracefully
+};
 
 async function streamToString(stream) {
   const chunks = [];
   for await (const chunk of stream) chunks.push(chunk);
   return Buffer.concat(chunks).toString('utf-8');
+}
+
+async function streamToBuffer(stream) {
+  const chunks = [];
+  for await (const chunk of stream) chunks.push(chunk);
+  return Buffer.concat(chunks);
 }
 
 async function readMetadata(bucket, key) {
@@ -75,53 +91,39 @@ async function checkDuplicate(tenantId, deduplicationKey) {
   }
 }
 
-async function extractWithTextract(bucket, key) {
-  const resp = await textract.send(new AnalyzeExpenseCommand({
-    Document: { S3Object: { Bucket: bucket, Name: key } },
-  }));
+async function extractWithVision(bucket, key, tenantProfile) {
+  // Fetch document bytes from S3
+  const s3Resp = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+  const docBytes = await streamToBuffer(s3Resp.Body);
 
-  const fields = {};
-  const confidences = [];
+  const ext = key.split('.').pop()?.toLowerCase() ?? '';
+  const mediaType = SUPPORTED_MEDIA_TYPES[ext] ?? 'application/pdf';
+  const isPdf = mediaType === 'application/pdf';
 
-  for (const doc of (resp.ExpenseDocuments || [])) {
-    for (const field of (doc.SummaryFields || [])) {
-      const type  = field.Type?.Text;
-      const value = field.ValueDetection?.Text;
-      const conf  = field.ValueDetection?.Confidence;
-      if (type && value) {
-        fields[type] = value;
-        if (conf != null) confidences.push(conf / 100);
-      }
-    }
-  }
+  log.debug('Vision extraction', { key, ext, mediaType, sizeKb: Math.round(docBytes.length / 1024) });
 
-  const avgConfidence = confidences.length > 0
-    ? confidences.reduce((a, b) => a + b, 0) / confidences.length
-    : 0;
+  const contentBlock = isPdf
+    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf',  data: docBytes.toString('base64') } }
+    : { type: 'image',    source: { type: 'base64', media_type: mediaType,            data: docBytes.toString('base64') } };
 
-  return { fields, avgConfidence };
-}
+  const prompt = `You are an invoice data extraction assistant. Examine this document carefully.
 
-async function normalizeWithLLM(textractFields, tenantProfile) {
-  const prompt = `You are an invoice data extraction assistant. Extract structured invoice data from Textract fields.
-
-Tenant identity (company using this system):
+Tenant identity (the company using this system — used to determine invoice direction):
 - Legal name: ${tenantProfile.legalName || 'unknown'}
 - VAT number: ${tenantProfile.vatNumber || 'unknown'}
 - Bulstat: ${tenantProfile.bulstat || 'unknown'}
 - Aliases: ${tenantProfile.aliases.join(', ') || 'none'}
 
-Textract extracted fields:
-${JSON.stringify(textractFields, null, 2)}
+Read ALL text in the document, including Cyrillic (Bulgarian) characters. Extract the following fields:
 
-Instructions:
-1. documentType: "invoice", "proforma", or "credit_note"
-2. direction: "incoming" (we are the buyer) or "outgoing" (we are the seller) — match tenant identity to vendor/receiver fields
-3. Parse dates to YYYY-MM-DD format
-4. Parse amounts to numbers only (strip EUR, spaces, commas)
-5. confidence: 0–1, based on completeness of invoiceNumber, issueDate, amountTotal, supplierVatNumber
+1. documentType: "invoice" (фактура), "proforma" (проформа), or "credit_note" (кредитно известие)
+2. direction: "incoming" (tenant is the buyer/получател) or "outgoing" (tenant is the seller/доставчик)
+3. issueDate / dueDate: YYYY-MM-DD format; null if absent
+4. amountNet / amountVat / amountTotal: numbers only, strip all currency symbols and spaces
+5. confidence: 0.0–1.0 reflecting how many of these four fields are clearly readable: invoiceNumber, issueDate, amountTotal, supplierVatNumber. A clean, legible invoice with all four fields should score ≥ 0.85.
+6. Return null for any field that is absent or illegible
 
-Return ONLY valid JSON (no markdown):
+Return ONLY valid JSON (no markdown, no explanation):
 {"documentType":"invoice","direction":"incoming","invoiceNumber":null,"issueDate":null,"dueDate":null,"supplierName":null,"supplierVatNumber":null,"clientName":null,"clientVatNumber":null,"amountNet":null,"amountVat":null,"amountTotal":null,"confidence":0.5}`;
 
   const response = await bedrock.send(new InvokeModelCommand({
@@ -131,13 +133,12 @@ Return ONLY valid JSON (no markdown):
     body: JSON.stringify({
       anthropic_version: 'bedrock-2023-05-31',
       max_tokens: 1024,
-      messages: [{ role: 'user', content: prompt }],
+      messages: [{ role: 'user', content: [contentBlock, { type: 'text', text: prompt }] }],
     }),
   }));
 
   const body = JSON.parse(new TextDecoder().decode(response.body));
   const text = body.content?.[0]?.text || '{}';
-  // Strip any accidental markdown fences
   const clean = text.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
   return JSON.parse(clean);
 }
@@ -206,15 +207,16 @@ export const handler = async (event) => {
     try {
       const tenantProfile = await getTenantProfile(tenantId);
 
-      log.debug('Starting Textract extraction', { bucket, key });
-      const { fields, avgConfidence: textractConfidence } = await extractWithTextract(bucket, key);
-      log.debug('Textract complete', { tenantId, fields: Object.keys(fields).length, textractConfidence });
+      log.debug('Starting Claude Vision extraction', { bucket, key });
+      const normalized = await extractWithVision(bucket, key, tenantProfile);
+      log.debug('Vision extraction complete', {
+        tenantId, invoiceId,
+        documentType: normalized.documentType,
+        direction:    normalized.direction,
+        confidence:   normalized.confidence,
+      });
 
-      log.debug('Starting LLM normalization', { tenantId, invoiceId });
-      const normalized = await normalizeWithLLM(fields, tenantProfile);
-      log.debug('LLM normalization complete', { tenantId, invoiceId, documentType: normalized.documentType, direction: normalized.direction });
-
-      const confidence       = normalized.confidence ?? textractConfidence;
+      const confidence       = normalized.confidence ?? 0;
       const status           = confidence >= CONFIDENCE_THRESHOLD ? 'extracted' : 'review_needed';
       const deduplicationKey = normalized.supplierVatNumber && normalized.invoiceNumber
         ? `${normalized.supplierVatNumber}#${normalized.invoiceNumber}`

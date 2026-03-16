@@ -206,9 +206,10 @@ export const handler = async (event) => {
 
     const history = await getHistory(tenantUser);
 
+    const bgNote = ' When writing in Bulgarian, use proper literary Bulgarian (книжовен български език) — avoid Russianisms and calques from Russian; prefer authentic Bulgarian vocabulary and grammatically correct forms.';
     const systemMessage = context
-      ? `You are a helpful knowledge base assistant. Use the following context to answer questions.\n\nContext:\n${context}\n\nIf the context doesn't contain relevant information, say so. Write in the same language as the user's question.`
-      : "You are a helpful assistant. Answer questions clearly and concisely. Write in the same language as the user's question.";
+      ? `You are a helpful knowledge base assistant. Use the following context to answer questions.\n\nContext:\n${context}\n\nIf the context doesn't contain relevant information, say so. Write in the same language as the user's question.${bgNote}`
+      : `You are a helpful assistant. Answer questions clearly and concisely. Write in the same language as the user's question.${bgNote}`;
 
     const messages = [
       ...history,

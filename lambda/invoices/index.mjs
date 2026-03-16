@@ -229,30 +229,59 @@ export const handler = async (event) => {
   // ── PUT /tenants/{tenantId}/invoices/{invoiceId} ───────────────────────────
   const invoiceId = pathParams.invoiceId || path.match(/\/invoices\/([^/]+)$/)?.[1];
   if (method === 'PUT' && invoiceId && !path.endsWith('/profile')) {
-    const { status } = parseBody(event);
+    const body = parseBody(event);
+    const { status } = body;
     if (!VALID_STATUSES.includes(status)) {
       return jsonResponse(400, { error: `Invalid status. Valid: ${VALID_STATUSES.join(', ')}` });
     }
+    if (body.direction && !['incoming', 'outgoing'].includes(body.direction)) {
+      return jsonResponse(400, { error: 'Invalid direction. Valid: incoming, outgoing' });
+    }
+    if (body.documentType && !['invoice', 'proforma', 'credit_note'].includes(body.documentType)) {
+      return jsonResponse(400, { error: 'Invalid documentType. Valid: invoice, proforma, credit_note' });
+    }
+
     try {
-      const updateExpr = status === 'confirmed'
-        ? 'SET #s = :s, confirmedAt = :ts'
-        : status === 'paid'
-          ? 'SET #s = :s, paidAt = :ts'
-          : 'SET #s = :s';
-      const exprValues = {
-        ':s':  { S: status },
-        ...((['confirmed', 'paid'].includes(status)) ? { ':ts': { S: new Date().toISOString() } } : {}),
-      };
+      const setFragments = ['#s = :s'];
+      const exprNames    = { '#s': 'status' };
+      const exprValues   = { ':s': { S: status } };
+
+      if (status === 'confirmed') { setFragments.push('confirmedAt = :ts'); exprValues[':ts'] = { S: new Date().toISOString() }; }
+      if (status === 'paid')      { setFragments.push('paidAt = :ts');      exprValues[':ts'] = { S: new Date().toISOString() }; }
+
+      const stringFields  = ['invoiceNumber', 'issueDate', 'dueDate', 'supplierName', 'supplierVatNumber', 'clientName', 'clientVatNumber', 'documentType', 'direction'];
+      const numericFields = ['amountNet', 'amountVat', 'amountTotal'];
+
+      for (const k of stringFields) {
+        if (body[k] != null && String(body[k]).trim() !== '') {
+          setFragments.push(`${k} = :${k}`);
+          exprValues[`:${k}`] = { S: String(body[k]) };
+        }
+      }
+      for (const k of numericFields) {
+        if (body[k] != null && !Number.isNaN(Number(body[k]))) {
+          setFragments.push(`${k} = :${k}`);
+          exprValues[`:${k}`] = { N: String(Number(body[k])) };
+        }
+      }
+      // Recompute deduplication key if both key components are present
+      const effectiveVat    = body.supplierVatNumber || null;
+      const effectiveInvNum = body.invoiceNumber     || null;
+      if (effectiveVat && effectiveInvNum) {
+        setFragments.push('deduplicationKey = :dk');
+        exprValues[':dk'] = { S: `${effectiveVat}#${effectiveInvNum}` };
+      }
+
       await dynamo.send(new UpdateItemCommand({
         TableName: INVOICES_TABLE,
         Key: { tenantId: { S: tenantIdFromPath }, invoiceId: { S: invoiceId } },
-        UpdateExpression: updateExpr,
-        ExpressionAttributeNames: { '#s': 'status' },
+        UpdateExpression: `SET ${setFragments.join(', ')}`,
+        ExpressionAttributeNames: exprNames,
         ExpressionAttributeValues: exprValues,
         ConditionExpression: 'attribute_exists(invoiceId)',
       }));
-      log.info('Invoice status updated', { tenantId: tenantIdFromPath, invoiceId, status });
-      return jsonResponse(200, { invoiceId, status });
+      log.info('Invoice updated', { tenantId: tenantIdFromPath, invoiceId, status });
+      return jsonResponse(200, { invoiceId, status, ...Object.fromEntries(stringFields.concat(numericFields).map(k => [k, body[k] ?? undefined]).filter(([,v]) => v != null)) });
     } catch (err) {
       if (err.name === 'ConditionalCheckFailedException') return jsonResponse(404, { error: 'Invoice not found' });
       log.error('Failed to update invoice', { tenantId: tenantIdFromPath, invoiceId, error: err.message });
