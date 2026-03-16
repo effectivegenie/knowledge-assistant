@@ -64,7 +64,12 @@ export const handler = async (event) => {
 
   if (!tenantIdFromPath) return jsonResponse(404, { error: 'Not found' });
   if (!isRootAdmin && (!isTenantAdmin || userTenantId !== tenantIdFromPath)) {
-    return jsonResponse(403, { error: 'Forbidden', detail: { userTenantId, tenantIdFromPath, isTenantAdmin, isRootAdmin, groups } });
+    return jsonResponse(403, { error: 'Forbidden', detail: {
+      userTenantId, tenantIdFromPath, isTenantAdmin, isRootAdmin,
+      groups_parsed: groups,
+      groups_raw: claims['cognito:groups'],
+      groups_raw_type: typeof claims['cognito:groups'],
+    } });
   }
 
   // ── POST /tenants/{tenantId}/upload-url ───────────────────────────────────
