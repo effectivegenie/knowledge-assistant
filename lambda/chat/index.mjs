@@ -125,36 +125,52 @@ export const handler = async (event) => {
     if (knowledgeBaseId) {
       log.debug('RAG retrieval starting', { tenantId, knowledgeBaseId, isAdmin, businessGroups });
       try {
-        // S3 Vectors only supports equals/notEquals/in/notIn KB-level filters.
-        // startsWith and listContains (OpenSearch Serverless only) must NOT be used.
-        //
-        // Strategy: retrieve a larger candidate set without any KB filter, then
-        // apply tenant isolation and group access control in Lambda (plain JS).
-        // This works for all documents regardless of metadata format.
-        const resp = await bedrockAgentClient.send(new RetrieveCommand({
-          knowledgeBaseId,
-          retrievalQuery: { text: prompt },
-          retrievalConfiguration: {
-            vectorSearchConfiguration: { numberOfResults: 30 },
-          },
-        }));
-
-        let results = resp.retrievalResults || [];
-        log.debug('RAG raw results before filtering', { tenantId, count: results.length });
-
-        // 1. Tenant isolation — match by source URI prefix (old docs) or tenantId metadata (new docs)
         const sourcePrefix = docsPrefix && DOCS_BUCKET_NAME
           ? `s3://${DOCS_BUCKET_NAME}/${docsPrefix}`
           : null;
-        if (sourcePrefix) {
-          results = results.filter(r =>
+
+        // Primary: KB-level equals filter on tenantId — precise, scales to any number of tenants.
+        // Works for all documents that have tenantId in their .metadata.json.
+        // S3 Vectors supports equals/notEquals/in/notIn — startsWith/listContains are OpenSearch only.
+        let results = [];
+        try {
+          const resp = await bedrockAgentClient.send(new RetrieveCommand({
+            knowledgeBaseId,
+            retrievalQuery: { text: prompt },
+            retrievalConfiguration: {
+              vectorSearchConfiguration: {
+                numberOfResults: 20,
+                filter: { equals: { key: 'tenantId', value: tenantId } },
+              },
+            },
+          }));
+          results = resp.retrievalResults || [];
+          log.debug('RAG with tenantId KB filter', { tenantId, count: results.length });
+        } catch (filterErr) {
+          log.warn('KB tenantId filter failed, will use URI fallback', { error: filterErr.message });
+        }
+
+        // Fallback: retrieve unfiltered and post-filter by source URI.
+        // Used when docs were uploaded before tenantId metadata was introduced.
+        // Run "Migrate metadata" in the admin panel to eliminate this fallback.
+        if (results.length === 0 && sourcePrefix) {
+          log.debug('Falling back to unfiltered retrieval + URI post-filter', { tenantId, sourcePrefix });
+          const resp = await bedrockAgentClient.send(new RetrieveCommand({
+            knowledgeBaseId,
+            retrievalQuery: { text: prompt },
+            retrievalConfiguration: { vectorSearchConfiguration: { numberOfResults: 30 } },
+          }));
+          results = (resp.retrievalResults || []).filter(r =>
             r.location?.s3Location?.uri?.startsWith(sourcePrefix) ||
             r.metadata?.tenantId === tenantId
           );
-          log.debug('After tenant filter', { tenantId, count: results.length, sourcePrefix });
+          log.debug('After URI fallback filter', { tenantId, count: results.length });
         }
 
-        // 2. Group access control — post-filter for non-admin users with assigned groups
+        log.debug('RAG after tenant isolation', { tenantId, count: results.length });
+
+        // Group access control — post-filter for non-admin users with assigned groups.
+        // listContains is not supported on S3 Vectors so this must run in Lambda.
         if (!isAdmin && businessGroups.length > 0) {
           const allowedGroups = new Set([...businessGroups, 'general']);
           results = results.filter(r => {

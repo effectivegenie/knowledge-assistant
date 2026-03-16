@@ -169,6 +169,7 @@ export class ComputeConstruct extends Construct {
                 'cognito-idp:AdminListGroupsForUser', 'cognito-idp:AdminDeleteUser'],
       resources: [userPool.userPoolArn],
     }));
+    docsBucket.grantRead(this.tenantAdminFn);  // ListBucket + GetObject needed for migrate-metadata
     docsBucket.grantPut(this.tenantAdminFn);
   }
 }

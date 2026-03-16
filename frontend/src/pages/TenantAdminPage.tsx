@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Table, Button, Form, Input, Drawer, Space, Typography, message, Tag, Popconfirm, Upload, Select } from 'antd';
 import type { UploadFile, TableProps } from 'antd';
-import { PlusOutlined, UserOutlined, DeleteOutlined, UploadOutlined, InboxOutlined, SearchOutlined, EditOutlined } from '@ant-design/icons';
+import { PlusOutlined, UserOutlined, DeleteOutlined, UploadOutlined, InboxOutlined, SearchOutlined, EditOutlined, SyncOutlined } from '@ant-design/icons';
 import { useAuth } from '../auth/AuthContext';
 import { adminApiUrl } from '../config';
 
@@ -86,6 +86,7 @@ export default function TenantAdminPage() {
   const [uploadFileList, setUploadFileList] = useState<UploadFile[]>([]);
   const [uploadGroups, setUploadGroups] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [migrating, setMigrating] = useState(false);
 
   const authHeaders = { Authorization: `Bearer ${idToken}` };
 
@@ -185,6 +186,27 @@ export default function TenantAdminPage() {
       message.error(e instanceof Error ? e.message : 'Failed to update groups');
     } finally {
       setEditGroupsSubmitting(false);
+    }
+  };
+
+  const handleMigrateMetadata = async () => {
+    setMigrating(true);
+    try {
+      const res = await fetch(`${adminApiUrl}/tenants/${encodeURIComponent(tenantId)}/migrate-metadata`, {
+        method: 'POST',
+        headers: authHeaders,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      if (data.migrated === 0) {
+        message.info(`All ${data.total} documents already have metadata.`);
+      } else {
+        message.success(`Migrated ${data.migrated} of ${data.total} documents. Re-indexing started automatically.`);
+      }
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : 'Migration failed');
+    } finally {
+      setMigrating(false);
     }
   };
 
@@ -336,6 +358,14 @@ export default function TenantAdminPage() {
           </Title>
         </Space>
         <Space>
+          <Button
+            icon={<SyncOutlined />}
+            loading={migrating}
+            onClick={handleMigrateMetadata}
+            title="Create missing metadata files so documents are filtered correctly by tenant and group"
+          >
+            Migrate metadata
+          </Button>
           <Button icon={<UploadOutlined />} onClick={() => setUploadDrawerOpen(true)}>
             Upload documents
           </Button>

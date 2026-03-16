@@ -225,6 +225,21 @@ export class AdminApiConstruct extends Construct {
             'x-amazon-apigateway-integration': tenantAdminIntegration,
           },
         },
+        '/tenants/{tenantId}/migrate-metadata': {
+          post: {
+            operationId: 'migrateMetadata',
+            summary: 'Add tenantId metadata to documents that are missing it',
+            description: 'Creates .metadata.json files for documents that do not have one yet, enabling KB-level tenant filtering. Each PUT triggers S3 event → sync Lambda → ingestion job.',
+            security: securedWith,
+            parameters: [{ name: 'tenantId', in: 'path', required: true, schema: { type: 'string' } }],
+            responses: {
+              '200': { description: 'Migration result', content: { 'application/json': { schema: { type: 'object', properties: { migrated: { type: 'integer' }, total: { type: 'integer' } } } } } },
+              '403': { description: 'Forbidden' },
+              '500': { description: 'Bucket not configured' },
+            },
+            'x-amazon-apigateway-integration': tenantAdminIntegration,
+          },
+        },
         '/tenants/{tenantId}/upload-url': {
           post: {
             operationId: 'getUploadUrl',
