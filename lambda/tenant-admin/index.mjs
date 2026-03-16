@@ -52,10 +52,20 @@ export const handler = async (event) => {
   const method     = event.requestContext?.http?.method || event.httpMethod || '';
   const pathParams = event.pathParameters || {};
 
-  const tenantIdFromPath = pathParams.tenantId || path.match(/^\/tenants\/([^/]+)\/users/)?.[1] || null;
+  const tenantIdFromPath = pathParams.tenantId || path.match(/^\/tenants\/([^/]+)/)?.[1] || null;
+
+  console.log('TenantAdminFn:', JSON.stringify({
+    method, path, tenantIdFromPath,
+    userTenantId,
+    groups_raw: claims['cognito:groups'],
+    groups_parsed: groups,
+    isTenantAdmin, isRootAdmin,
+  }));
 
   if (!tenantIdFromPath) return jsonResponse(404, { error: 'Not found' });
-  if (!isRootAdmin && (!isTenantAdmin || userTenantId !== tenantIdFromPath)) return jsonResponse(403, { error: 'Forbidden' });
+  if (!isRootAdmin && (!isTenantAdmin || userTenantId !== tenantIdFromPath)) {
+    return jsonResponse(403, { error: 'Forbidden', detail: { userTenantId, tenantIdFromPath, isTenantAdmin, isRootAdmin } });
+  }
 
   // ── POST /tenants/{tenantId}/upload-url ───────────────────────────────────
   if (method === 'POST' && path.endsWith('/upload-url')) {
