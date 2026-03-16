@@ -25,7 +25,7 @@ const DOCS_BUCKET_NAME         = process.env.DOCS_BUCKET_NAME;
 const TENANT_ADMIN_GROUP       = 'TenantAdmin';
 const BUSINESS_GROUPS = [
   'financial', 'accounting', 'operations', 'marketing', 'IT',
-  'warehouse', 'security', 'logistics', 'sales',
+  'warehouse', 'security', 'logistics', 'sales', 'design', 'HR',
 ];
 
 function parseBody(event) {
@@ -99,12 +99,30 @@ export const handler = async (event) => {
       }));
     }
     const scan2 = await dynamo.send(new ScanCommand({ TableName: TENANTS_TABLE }));
-    const tenants = (scan2.Items || []).map(i => ({
-      tenantId:  i.tenantId?.S,
-      name:      i.name?.S,
-      createdAt: i.createdAt?.S,
+    let items = (scan2.Items || []).map(i => ({
+      tenantId:  i.tenantId?.S || '',
+      name:      i.name?.S || '',
+      createdAt: i.createdAt?.S || '',
     }));
-    return jsonResponse(200, { tenants });
+
+    const qs = event.queryStringParameters || {};
+    const search   = (qs.search || '').toLowerCase().trim();
+    const sortBy   = qs.sortBy || 'name';
+    const sortDir  = qs.sortOrder === 'desc' ? -1 : 1;
+    const page     = Math.max(0, parseInt(qs.page || '0', 10));
+    const pageSize = Math.min(100, Math.max(1, parseInt(qs.pageSize || '20', 10)));
+
+    if (search) {
+      items = items.filter(t =>
+        t.tenantId.toLowerCase().includes(search) ||
+        t.name.toLowerCase().includes(search)
+      );
+    }
+    items.sort((a, b) => sortDir * String(a[sortBy] || '').localeCompare(String(b[sortBy] || '')));
+
+    const total = items.length;
+    const paged = items.slice(page * pageSize, (page + 1) * pageSize);
+    return jsonResponse(200, { items: paged, total, page, pageSize });
   }
 
   // ── POST /tenants ─────────────────────────────────────────────────────────
@@ -270,21 +288,9 @@ export const handler = async (event) => {
         }
       }
 
-      // 2. Sync the now-empty S3 prefix to remove document vectors from the KB,
-      //    then delete the data source (DELETE policy removes remaining vectors)
+      // 2. Delete the data source — dataDeletionPolicy:'DELETE' ensures Bedrock
+      //    removes all indexed vectors for this tenant automatically.
       if (kbId && dsId && dsId !== DEFAULT_DATA_SOURCE_ID) {
-        try {
-          // Start an ingestion job against the empty prefix — Bedrock will mark all
-          // previously indexed documents as deleted and remove their vectors
-          await bedrockAgent.send(new StartIngestionJobCommand({
-            knowledgeBaseId: kbId,
-            dataSourceId: dsId,
-          }));
-          log.info('Ingestion sync started on empty prefix to purge vectors', { tenantId: tenantIdParam, dataSourceId: dsId });
-        } catch (err) {
-          log.warn('Pre-delete ingestion sync failed (non-fatal)', { tenantId: tenantIdParam, dataSourceId: dsId, error: err.message });
-        }
-
         try {
           await bedrockAgent.send(new DeleteDataSourceCommand({
             knowledgeBaseId: kbId,
@@ -292,9 +298,7 @@ export const handler = async (event) => {
           }));
           log.info('Bedrock data source deleted', { tenantId: tenantIdParam, dataSourceId: dsId });
         } catch (err) {
-          // ConflictException if an ingestion job is still running — vectors are
-          // being purged anyway by the job above; data source can be cleaned up manually
-          log.warn('Bedrock data source deletion failed (non-fatal, vectors purged by sync job)', { tenantId: tenantIdParam, dataSourceId: dsId, error: err.message });
+          log.warn('Bedrock data source deletion failed (non-fatal)', { tenantId: tenantIdParam, dataSourceId: dsId, error: err.message });
         }
       }
 

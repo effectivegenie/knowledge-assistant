@@ -222,8 +222,9 @@ export default function App() {
 
   useEffect(() => {
     if (isRootAdmin) setView('admin');
-    // TenantAdmins default to chat; they can navigate to Users via the menu
-  }, [isRootAdmin]);
+    else if (isTenantAdmin) setView('tenant-admin');
+    // Regular users default to chat
+  }, [isRootAdmin, isTenantAdmin]);
 
   if (isLoading) {
     return (

@@ -57,7 +57,7 @@ describe('tenant-admin handler — authorization', () => {
     const res = await handler(event);
     expect(res.statusCode).not.toBe(403);
     expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.body).users).toEqual([]);
+    expect(JSON.parse(res.body).items).toEqual([]);
   });
 
   it('allows TenantAdmin to access their own tenant', async () => {

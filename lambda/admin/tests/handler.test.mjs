@@ -93,7 +93,7 @@ describe('admin handler — POST /tenants business groups assignment', () => {
 
     // mockCognitoSend receives objects shaped { input: { UserPoolId, Username, GroupName } }
     // because AdminAddUserToGroupCommand mock is: (input) => ({ input })
-    const EXPECTED_GROUPS = ['financial', 'accounting', 'operations', 'marketing', 'IT', 'warehouse', 'security', 'logistics', 'sales'];
+    const EXPECTED_GROUPS = ['financial', 'accounting', 'operations', 'marketing', 'IT', 'warehouse', 'security', 'logistics', 'sales', 'design', 'HR'];
     for (const g of EXPECTED_GROUPS) {
       expect(mockCognitoSend).toHaveBeenCalledWith(
         expect.objectContaining({ input: expect.objectContaining({ GroupName: g }) }),

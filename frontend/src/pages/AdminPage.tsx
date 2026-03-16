@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Table, Button, Form, Input, Drawer, Space, Typography, message, Tag, Popconfirm } from 'antd';
+import type { TableProps } from 'antd';
 import { PlusOutlined, TeamOutlined, EditOutlined, DeleteOutlined, UserOutlined, SearchOutlined } from '@ant-design/icons';
 import { useAuth } from '../auth/AuthContext';
 import { adminApiUrl } from '../config';
@@ -19,6 +20,13 @@ interface TenantUser {
   createdAt?: string;
 }
 
+interface TableState {
+  page: number;
+  pageSize: number;
+  sortBy: string;
+  sortOrder: 'asc' | 'desc';
+}
+
 const STATUS_COLOR: Record<string, string> = {
   CONFIRMED: 'green',
   FORCE_CHANGE_PASSWORD: 'orange',
@@ -34,6 +42,7 @@ const DRAWER_HEADER = {
 export default function AdminPage() {
   const { idToken } = useAuth();
   const [tenants, setTenants]         = useState<Tenant[]>([]);
+  const [tenantTotal, setTenantTotal] = useState(0);
   const [loading, setLoading]         = useState(true);
   const [createOpen, setCreateOpen]   = useState(false);
   const [editTenant, setEditTenant]   = useState<Tenant | null>(null);
@@ -42,31 +51,44 @@ export default function AdminPage() {
   const [editForm]   = Form.useForm();
 
   const [tenantSearch, setTenantSearch] = useState('');
+  const [tenantTableState, setTenantTableState] = useState<TableState>({ page: 0, pageSize: 20, sortBy: 'name', sortOrder: 'asc' });
+  const tenantSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Users drawer state
   const [usersTenant, setUsersTenant]     = useState<Tenant | null>(null);
   const [users, setUsers]                 = useState<TenantUser[]>([]);
+  const [userTotal, setUserTotal]         = useState(0);
   const [usersLoading, setUsersLoading]   = useState(false);
   const [addUserOpen, setAddUserOpen]     = useState(false);
   const [userSubmitting, setUserSubmitting] = useState(false);
   const [userForm] = Form.useForm();
   const [userSearch, setUserSearch] = useState('');
+  const [userTableState, setUserTableState] = useState<TableState>({ page: 0, pageSize: 20, sortBy: 'email', sortOrder: 'asc' });
+  const userSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const headers = { Authorization: `Bearer ${idToken}` };
 
-  const fetchTenants = async () => {
+  const fetchTenants = async (state: TableState = tenantTableState, search: string = tenantSearch) => {
     if (!idToken) return;
     if (!adminApiUrl || adminApiUrl.startsWith('REPLACE')) { setLoading(false); return; }
     setLoading(true);
     try {
-      const res = await fetch(`${adminApiUrl}/tenants`, { headers });
+      const qs = new URLSearchParams({
+        page: String(state.page),
+        pageSize: String(state.pageSize),
+        sortBy: state.sortBy,
+        sortOrder: state.sortOrder,
+        ...(search && { search }),
+      });
+      const res = await fetch(`${adminApiUrl}/tenants?${qs}`, { headers });
       if (!res.ok) {
         let errMsg = `${res.status} ${res.statusText}`;
         try { const d = await res.json(); if (d.error) errMsg = `${res.status}: ${d.error}`; } catch {}
         throw new Error(errMsg);
       }
       const data = await res.json();
-      setTenants(data.tenants || []);
+      setTenants(data.items || []);
+      setTenantTotal(data.total || 0);
     } catch (e) {
       message.error(e instanceof Error ? e.message : 'Failed to load tenants');
       setTenants([]);
@@ -76,6 +98,28 @@ export default function AdminPage() {
   };
 
   useEffect(() => { fetchTenants(); }, [idToken]);
+
+  const fetchUsers = async (tenantId: string, state: TableState = userTableState, search: string = userSearch) => {
+    setUsersLoading(true);
+    try {
+      const qs = new URLSearchParams({
+        page: String(state.page),
+        pageSize: String(state.pageSize),
+        sortBy: state.sortBy,
+        sortOrder: state.sortOrder,
+        ...(search && { search }),
+      });
+      const res = await fetch(`${adminApiUrl}/tenants/${encodeURIComponent(tenantId)}/users?${qs}`, { headers });
+      if (!res.ok) throw new Error(res.statusText);
+      const data = await res.json();
+      setUsers(data.items || []);
+      setUserTotal(data.total || 0);
+    } catch {
+      message.error('Failed to load users');
+    } finally {
+      setUsersLoading(false);
+    }
+  };
 
   const handleCreate = async (values: { tenantId: string; name: string; adminEmail: string; temporaryPassword: string }) => {
     setSubmitting(true);
@@ -146,35 +190,23 @@ export default function AdminPage() {
     editForm.setFieldsValue({ name: tenant.name });
   };
 
+  const closeUsers = () => {
+    setUsersTenant(null);
+    setUsers([]);
+    setUserTotal(0);
+    setAddUserOpen(false);
+    userForm.resetFields();
+    setUserSearch('');
+    setUserTableState({ page: 0, pageSize: 20, sortBy: 'email', sortOrder: 'asc' });
+  };
+
   const openUsers = async (tenant: Tenant) => {
     setUsersTenant(tenant);
     setUsers([]);
     setUserSearch('');
-    setUsersLoading(true);
-    try {
-      const res = await fetch(`${adminApiUrl}/tenants/${encodeURIComponent(tenant.tenantId)}/users`, { headers });
-      if (!res.ok) throw new Error(res.statusText);
-      const data = await res.json();
-      setUsers(data.users || []);
-    } catch {
-      message.error('Failed to load users');
-    } finally {
-      setUsersLoading(false);
-    }
-  };
-
-  const refreshUsers = async (tenantId: string) => {
-    setUsersLoading(true);
-    try {
-      const res = await fetch(`${adminApiUrl}/tenants/${encodeURIComponent(tenantId)}/users`, { headers });
-      if (!res.ok) throw new Error(res.statusText);
-      const data = await res.json();
-      setUsers(data.users || []);
-    } catch {
-      message.error('Failed to load users');
-    } finally {
-      setUsersLoading(false);
-    }
+    const initState: TableState = { page: 0, pageSize: 20, sortBy: 'email', sortOrder: 'asc' };
+    setUserTableState(initState);
+    fetchUsers(tenant.tenantId, initState, '');
   };
 
   const handleCreateUser = async (values: { email: string; temporaryPassword: string }) => {
@@ -191,7 +223,7 @@ export default function AdminPage() {
       message.success(`User ${values.email} created`);
       userForm.resetFields();
       setAddUserOpen(false);
-      refreshUsers(usersTenant.tenantId);
+      fetchUsers(usersTenant.tenantId, userTableState, userSearch);
     } catch (e) {
       message.error(e instanceof Error ? e.message : 'Failed to create user');
     } finally {
@@ -211,42 +243,32 @@ export default function AdminPage() {
         throw new Error(data.error || res.statusText);
       }
       message.success('User deleted');
-      refreshUsers(usersTenant.tenantId);
+      fetchUsers(usersTenant.tenantId, userTableState, userSearch);
     } catch (e) {
       message.error(e instanceof Error ? e.message : 'Failed to delete user');
     }
   };
-
-  const filteredTenants = tenants.filter(t => {
-    const q = tenantSearch.toLowerCase();
-    return !q || t.tenantId.toLowerCase().includes(q) || t.name.toLowerCase().includes(q);
-  });
-
-  const filteredUsers = users.filter(u => {
-    const q = userSearch.toLowerCase();
-    return !q || (u.email ?? '').toLowerCase().includes(q) || (u.status ?? '').toLowerCase().includes(q);
-  });
 
   const userColumns = [
     {
       title: 'Email',
       dataIndex: 'email',
       key: 'email',
-      sorter: (a: TenantUser, b: TenantUser) => (a.email ?? '').localeCompare(b.email ?? ''),
+      sorter: true,
       render: (email: string) => <Text strong>{email}</Text>,
     },
     {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
-      sorter: (a: TenantUser, b: TenantUser) => (a.status ?? '').localeCompare(b.status ?? ''),
+      sorter: true,
       render: (status: string) => <Tag color={STATUS_COLOR[status] ?? 'default'}>{status ?? '—'}</Tag>,
     },
     {
       title: 'Created',
       dataIndex: 'createdAt',
       key: 'createdAt',
-      sorter: (a: TenantUser, b: TenantUser) => new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime(),
+      sorter: true,
       render: (t: string) => t ? new Date(t).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—',
     },
     {
@@ -268,26 +290,26 @@ export default function AdminPage() {
     },
   ];
 
-  const columns = [
+  const tenantColumns = [
     {
       title: 'Tenant ID',
       dataIndex: 'tenantId',
       key: 'tenantId',
-      sorter: (a: Tenant, b: Tenant) => a.tenantId.localeCompare(b.tenantId),
+      sorter: true,
       render: (id: string) => <Tag color="blue">{id}</Tag>,
     },
     {
       title: 'Name',
       dataIndex: 'name',
       key: 'name',
-      sorter: (a: Tenant, b: Tenant) => a.name.localeCompare(b.name),
+      sorter: true,
       render: (name: string) => <Text strong>{name}</Text>,
     },
     {
       title: 'Created',
       dataIndex: 'createdAt',
       key: 'createdAt',
-      sorter: (a: Tenant, b: Tenant) => new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime(),
+      sorter: true,
       render: (t: string) => t ? new Date(t).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—',
     },
     {
@@ -324,6 +346,31 @@ export default function AdminPage() {
     },
   ];
 
+  const handleTenantTableChange: TableProps<Tenant>['onChange'] = (pagination, _, sorter) => {
+    const s = Array.isArray(sorter) ? sorter[0] : sorter;
+    const newState: TableState = {
+      page: (pagination.current || 1) - 1,
+      pageSize: pagination.pageSize || 20,
+      sortBy: (s.field ? String(s.field) : tenantTableState.sortBy),
+      sortOrder: s.order === 'descend' ? 'desc' : 'asc',
+    };
+    setTenantTableState(newState);
+    fetchTenants(newState, tenantSearch);
+  };
+
+  const handleUserTableChange: TableProps<TenantUser>['onChange'] = (pagination, _, sorter) => {
+    if (!usersTenant) return;
+    const s = Array.isArray(sorter) ? sorter[0] : sorter;
+    const newState: TableState = {
+      page: (pagination.current || 1) - 1,
+      pageSize: pagination.pageSize || 20,
+      sortBy: (s.field ? String(s.field) : userTableState.sortBy),
+      sortOrder: s.order === 'descend' ? 'desc' : 'asc',
+    };
+    setUserTableState(newState);
+    fetchUsers(usersTenant.tenantId, newState, userSearch);
+  };
+
   return (
     <div style={{ padding: '24px 32px', height: '100%', overflow: 'auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
@@ -340,17 +387,39 @@ export default function AdminPage() {
         prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />}
         placeholder="Search by tenant ID or name…"
         value={tenantSearch}
-        onChange={e => setTenantSearch(e.target.value)}
+        onChange={e => {
+          const value = e.target.value;
+          setTenantSearch(value);
+          if (tenantSearchTimer.current) clearTimeout(tenantSearchTimer.current);
+          tenantSearchTimer.current = setTimeout(() => {
+            const resetState = { ...tenantTableState, page: 0 };
+            setTenantTableState(resetState);
+            fetchTenants(resetState, value);
+          }, 400);
+        }}
         allowClear
+        onClear={() => {
+          const resetState = { ...tenantTableState, page: 0 };
+          setTenantTableState(resetState);
+          fetchTenants(resetState, '');
+        }}
         style={{ marginBottom: 12, maxWidth: 320 }}
       />
 
       <Table
         loading={loading}
-        dataSource={filteredTenants}
+        dataSource={tenants}
         rowKey="tenantId"
-        columns={columns}
-        pagination={{ pageSize: 20, hideOnSinglePage: true, showSizeChanger: false }}
+        columns={tenantColumns}
+        onChange={handleTenantTableChange}
+        pagination={{
+          current: tenantTableState.page + 1,
+          pageSize: tenantTableState.pageSize,
+          total: tenantTotal,
+          showTotal: (t) => `${t} tenant${t !== 1 ? 's' : ''}`,
+          hideOnSinglePage: true,
+          showSizeChanger: false,
+        }}
         style={{ width: '100%' }}
         bordered
       />
@@ -425,7 +494,7 @@ export default function AdminPage() {
         }
         placement="right"
         open={!!usersTenant}
-        onClose={() => { setUsersTenant(null); setUsers([]); setAddUserOpen(false); userForm.resetFields(); setUserSearch(''); }}
+        onClose={closeUsers}
         width={600}
         closeIcon={<span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 16 }}>✕</span>}
         styles={DRAWER_HEADER}
@@ -444,16 +513,40 @@ export default function AdminPage() {
           prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />}
           placeholder="Search by email or status…"
           value={userSearch}
-          onChange={e => setUserSearch(e.target.value)}
+          onChange={e => {
+            const value = e.target.value;
+            setUserSearch(value);
+            if (!usersTenant) return;
+            if (userSearchTimer.current) clearTimeout(userSearchTimer.current);
+            userSearchTimer.current = setTimeout(() => {
+              const resetState = { ...userTableState, page: 0 };
+              setUserTableState(resetState);
+              fetchUsers(usersTenant.tenantId, resetState, value);
+            }, 400);
+          }}
           allowClear
+          onClear={() => {
+            if (!usersTenant) return;
+            const resetState = { ...userTableState, page: 0 };
+            setUserTableState(resetState);
+            fetchUsers(usersTenant.tenantId, resetState, '');
+          }}
           style={{ marginBottom: 12 }}
         />
         <Table
           loading={usersLoading}
-          dataSource={filteredUsers}
+          dataSource={users}
           rowKey="username"
           columns={userColumns}
-          pagination={{ pageSize: 20, hideOnSinglePage: true, showSizeChanger: false }}
+          onChange={handleUserTableChange}
+          pagination={{
+            current: userTableState.page + 1,
+            pageSize: userTableState.pageSize,
+            total: userTotal,
+            showTotal: (t) => `${t} user${t !== 1 ? 's' : ''}`,
+            hideOnSinglePage: true,
+            showSizeChanger: false,
+          }}
           bordered
           size="small"
         />

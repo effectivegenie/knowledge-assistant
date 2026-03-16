@@ -198,6 +198,21 @@ export class AdminApiConstruct extends Construct {
           },
         },
         '/tenants/{tenantId}/users/{username}': {
+          put: {
+            operationId: 'updateTenantUserGroups',
+            summary: 'Update business groups for a tenant user',
+            security: securedWith,
+            parameters: [
+              { name: 'tenantId', in: 'path', required: true, schema: { type: 'string' } },
+              { name: 'username', in: 'path', required: true, schema: { type: 'string' } },
+            ],
+            requestBody: {
+              required: true,
+              content: { 'application/json': { schema: { type: 'object', properties: { businessGroups: { type: 'array', items: { type: 'string' } } } } } },
+            },
+            responses: { '200': { description: 'Updated' }, '400': { description: 'Validation error' }, '403': { description: 'Forbidden' } },
+            'x-amazon-apigateway-integration': tenantAdminIntegration,
+          },
           delete: {
             operationId: 'deleteTenantUser',
             summary: 'Permanently delete a Cognito user',

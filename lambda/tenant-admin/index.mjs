@@ -17,7 +17,7 @@ const DOCS_BUCKET_NAME  = process.env.DOCS_BUCKET_NAME;
 
 const BUSINESS_GROUPS = [
   'financial', 'accounting', 'operations', 'marketing', 'IT',
-  'warehouse', 'security', 'logistics', 'sales',
+  'warehouse', 'security', 'logistics', 'sales', 'design', 'HR',
 ];
 
 // Document tags include business groups + 'general' (accessible to all users)
@@ -90,8 +90,9 @@ export const handler = async (event) => {
     if (!filename) return jsonResponse(400, { error: 'Missing filename' });
     if (!DOCS_BUCKET_NAME) return jsonResponse(500, { error: 'Upload not configured' });
 
-    // Validate requested groups (business groups + 'general')
-    const docGroups = Array.isArray(groups) ? groups : [];
+    // Validate requested groups (business groups + 'general'); default to ['general'] if none provided
+    const rawGroups = Array.isArray(groups) ? groups : [];
+    const docGroups = rawGroups.length > 0 ? rawGroups : ['general'];
     const invalidGroups = docGroups.filter(g => !DOCUMENT_TAGS.includes(g));
     if (invalidGroups.length > 0) {
       return jsonResponse(400, { error: `Invalid groups: ${invalidGroups.join(', ')}` });
@@ -144,7 +145,26 @@ export const handler = async (event) => {
       };
     }));
 
-    return jsonResponse(200, { users });
+    const qs = event.queryStringParameters || {};
+    const search   = (qs.search || '').toLowerCase().trim();
+    const sortBy   = qs.sortBy || 'email';
+    const sortDir  = qs.sortOrder === 'desc' ? -1 : 1;
+    const page     = Math.max(0, parseInt(qs.page || '0', 10));
+    const pageSize = Math.min(100, Math.max(1, parseInt(qs.pageSize || '20', 10)));
+
+    let filtered = users;
+    if (search) {
+      filtered = filtered.filter(u =>
+        (u.email || '').toLowerCase().includes(search) ||
+        (u.status || '').toLowerCase().includes(search)
+      );
+    }
+    filtered.sort((a, b) => sortDir * String(a[sortBy] || '').localeCompare(String(b[sortBy] || '')));
+
+    const total = filtered.length;
+    const paged = filtered.slice(page * pageSize, (page + 1) * pageSize);
+    log.info('Users listed', { tenantId: tenantIdFromPath, total, page, pageSize });
+    return jsonResponse(200, { items: paged, total, page, pageSize });
   }
 
   // ── POST /tenants/{tenantId}/users ────────────────────────────────────────

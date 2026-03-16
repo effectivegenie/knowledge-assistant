@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Table, Button, Form, Input, Drawer, Space, Typography, message, Tag, Popconfirm, Upload, Select } from 'antd';
-import type { UploadProps } from 'antd';
+import type { UploadFile, TableProps } from 'antd';
 import { PlusOutlined, UserOutlined, DeleteOutlined, UploadOutlined, InboxOutlined, SearchOutlined, EditOutlined } from '@ant-design/icons';
 import { useAuth } from '../auth/AuthContext';
 import { adminApiUrl } from '../config';
@@ -10,7 +10,7 @@ const { Title, Text } = Typography;
 
 const BUSINESS_GROUPS = [
   'financial', 'accounting', 'operations', 'marketing', 'IT',
-  'warehouse', 'security', 'logistics', 'sales',
+  'warehouse', 'security', 'logistics', 'sales', 'design', 'HR',
 ];
 
 // Options for user assignment (business groups only)
@@ -22,6 +22,20 @@ const DOCUMENT_TAG_OPTIONS = [
   ...BUSINESS_GROUPS.map(g => ({ label: g, value: g })),
 ];
 
+// Accepted MIME types for document upload
+const ACCEPTED_MIME = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'text/plain', 'text/markdown', 'text/html', 'text/csv',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/tiff', 'image/bmp',
+]);
+const ACCEPTED_EXT = /\.(pdf|docx?|txt|md|html?|csv|xlsx?|pptx?|jpe?g|png|gif|webp|tiff?|bmp)$/i;
+
 interface TenantUser {
   username: string;
   email?: string;
@@ -30,41 +44,69 @@ interface TenantUser {
   businessGroups?: string[];
 }
 
+interface TableState {
+  page: number;
+  pageSize: number;
+  sortBy: string;
+  sortOrder: 'asc' | 'desc';
+}
+
 const STATUS_COLOR: Record<string, string> = {
   CONFIRMED: 'green',
   FORCE_CHANGE_PASSWORD: 'orange',
   UNCONFIRMED: 'red',
 };
 
+const DRAWER_STYLES = {
+  header: { background: '#1e3a5f', borderBottom: '2px solid #e6a800', padding: '16px 20px' },
+  body:   { paddingTop: 24 },
+  footer: { borderTop: '1px solid #f0f4fb' },
+};
+
 export default function TenantAdminPage() {
   const { user, idToken } = useAuth();
   const tenantId = user?.tenantId ?? 'default';
   const [users, setUsers] = useState<TenantUser[]>([]);
+  const [userTotal, setUserTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [userSearch, setUserSearch] = useState('');
+  const [userTableState, setUserTableState] = useState<TableState>({ page: 0, pageSize: 20, sortBy: 'email', sortOrder: 'asc' });
+  const userSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [uploadDrawerOpen, setUploadDrawerOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm();
+
   const [editUser, setEditUser] = useState<TenantUser | null>(null);
   const [editGroupsSubmitting, setEditGroupsSubmitting] = useState(false);
   const [editGroupsForm] = Form.useForm();
-  const uploadGroupsRef = useRef<string[]>([]);
-  const [uploadGroups, setUploadGroups] = useState<string[]>([]);
 
-  const fetchUsers = async () => {
-    if (!adminApiUrl || adminApiUrl.startsWith('REPLACE')) {
-      setLoading(false);
-      return;
-    }
+  // Upload state
+  const [uploadFileList, setUploadFileList] = useState<UploadFile[]>([]);
+  const [uploadGroups, setUploadGroups] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
+
+  const authHeaders = { Authorization: `Bearer ${idToken}` };
+
+  const fetchUsers = async (state: TableState = userTableState, search: string = userSearch) => {
+    if (!adminApiUrl || adminApiUrl.startsWith('REPLACE')) { setLoading(false); return; }
     setLoading(true);
     try {
-      const res = await fetch(`${adminApiUrl}/tenants/${encodeURIComponent(tenantId)}/users`, {
-        headers: { Authorization: `Bearer ${idToken}` },
+      const qs = new URLSearchParams({
+        page: String(state.page),
+        pageSize: String(state.pageSize),
+        sortBy: state.sortBy,
+        sortOrder: state.sortOrder,
+        ...(search && { search }),
+      });
+      const res = await fetch(`${adminApiUrl}/tenants/${encodeURIComponent(tenantId)}/users?${qs}`, {
+        headers: authHeaders,
       });
       if (!res.ok) throw new Error(res.statusText);
       const data = await res.json();
-      setUsers(data.users || []);
+      setUsers(data.items || []);
+      setUserTotal(data.total || 0);
     } catch {
       message.error('Failed to load users');
       setUsers([]);
@@ -73,16 +115,14 @@ export default function TenantAdminPage() {
     }
   };
 
-  useEffect(() => {
-    fetchUsers();
-  }, [idToken, tenantId]);
+  useEffect(() => { fetchUsers(); }, [idToken, tenantId]);
 
   const handleCreate = async (values: { email: string; temporaryPassword: string; businessGroups?: string[] }) => {
     setSubmitting(true);
     try {
       const res = await fetch(`${adminApiUrl}/tenants/${encodeURIComponent(tenantId)}/users`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({
           email: values.email.trim(),
           temporaryPassword: values.temporaryPassword,
@@ -94,7 +134,7 @@ export default function TenantAdminPage() {
       message.success(`User ${values.email} created`);
       form.resetFields();
       setDrawerOpen(false);
-      fetchUsers();
+      fetchUsers(userTableState, userSearch);
     } catch (e) {
       message.error(e instanceof Error ? e.message : 'Failed to create user');
     } finally {
@@ -106,14 +146,14 @@ export default function TenantAdminPage() {
     try {
       const res = await fetch(
         `${adminApiUrl}/tenants/${encodeURIComponent(tenantId)}/users/${encodeURIComponent(username)}`,
-        { method: 'DELETE', headers: { Authorization: `Bearer ${idToken}` } },
+        { method: 'DELETE', headers: authHeaders },
       );
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error || res.statusText);
       }
-      message.success(`User deleted`);
-      fetchUsers();
+      message.success('User deleted');
+      fetchUsers(userTableState, userSearch);
     } catch (e) {
       message.error(e instanceof Error ? e.message : 'Failed to delete user');
     }
@@ -132,7 +172,7 @@ export default function TenantAdminPage() {
         `${adminApiUrl}/tenants/${encodeURIComponent(tenantId)}/users/${encodeURIComponent(editUser.username)}`,
         {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+          headers: { 'Content-Type': 'application/json', ...authHeaders },
           body: JSON.stringify({ businessGroups: values.businessGroups ?? [] }),
         },
       );
@@ -140,7 +180,7 @@ export default function TenantAdminPage() {
       if (!res.ok) throw new Error(data.error || res.statusText);
       message.success('Groups updated');
       setEditUser(null);
-      fetchUsers();
+      fetchUsers(userTableState, userSearch);
     } catch (e) {
       message.error(e instanceof Error ? e.message : 'Failed to update groups');
     } finally {
@@ -148,24 +188,32 @@ export default function TenantAdminPage() {
     }
   };
 
-  const uploadProps: UploadProps = {
-    multiple: true,
-    customRequest: async ({ file, onSuccess, onError, onProgress }) => {
-      const f = file as File;
-      const currentGroups = uploadGroupsRef.current;
+  const resetUploadDrawer = () => {
+    setUploadDrawerOpen(false);
+    setUploadFileList([]);
+    setUploadGroups([]);
+  };
+
+  const handleUpload = async () => {
+    if (uploadFileList.length === 0) return;
+    setUploading(true);
+    let successCount = 0;
+    for (const fileWrapper of uploadFileList) {
+      const f = fileWrapper as unknown as File;
       try {
-        const res = await fetch(`${adminApiUrl}/tenants/${encodeURIComponent(tenantId)}/upload-url`, {
+        // If no groups selected, default to 'general' so the listContains filter matches
+      const effectiveGroups = uploadGroups.length > 0 ? uploadGroups : ['general'];
+      const res = await fetch(`${adminApiUrl}/tenants/${encodeURIComponent(tenantId)}/upload-url`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
-          body: JSON.stringify({ filename: f.name, groups: currentGroups }),
+          headers: { 'Content-Type': 'application/json', ...authHeaders },
+          body: JSON.stringify({ filename: f.name, groups: effectiveGroups }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || res.statusText);
         const { url, metadataUrl } = data;
 
-        // Upload metadata BEFORE the document so it's already in S3 when the
-        // S3-triggered ingestion job runs (Bedrock reads metadata during indexing)
-        const metadata = JSON.stringify({ metadataAttributes: { groups: currentGroups } });
+        // Upload metadata BEFORE document so it's already in S3 when ingestion runs
+        const metadata = JSON.stringify({ metadataAttributes: { groups: effectiveGroups } });
         await fetch(metadataUrl, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -174,9 +222,6 @@ export default function TenantAdminPage() {
 
         await new Promise<void>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
-          xhr.upload.onprogress = (e) => {
-            if (e.lengthComputable) onProgress?.({ percent: Math.round((e.loaded / e.total) * 100) });
-          };
           xhr.onload = () => {
             if (xhr.status === 200 || xhr.status === 204) resolve();
             else reject(new Error(`S3 upload failed: ${xhr.status}`));
@@ -187,31 +232,43 @@ export default function TenantAdminPage() {
           xhr.send(f);
         });
 
-        onSuccess?.(null);
+        successCount++;
       } catch (e) {
-        onError?.(e as Error);
+        message.error(`Failed to upload ${f.name}: ${e instanceof Error ? e.message : 'Unknown error'}`);
       }
-    },
+    }
+    setUploading(false);
+    if (successCount > 0) {
+      message.success(`${successCount} file${successCount !== 1 ? 's' : ''} uploaded`);
+      resetUploadDrawer();
+    }
   };
 
-  const filteredUsers = users.filter(u => {
-    const q = userSearch.toLowerCase();
-    return !q || (u.email ?? '').toLowerCase().includes(q) || (u.status ?? '').toLowerCase().includes(q);
-  });
+  const handleTableChange: TableProps<TenantUser>['onChange'] = (pagination, _, sorter) => {
+    const s = Array.isArray(sorter) ? sorter[0] : sorter;
+    const newState: TableState = {
+      page: (pagination.current || 1) - 1,
+      pageSize: pagination.pageSize || 20,
+      sortBy: s.field ? String(s.field) : userTableState.sortBy,
+      sortOrder: s.order === 'descend' ? 'desc' : 'asc',
+    };
+    setUserTableState(newState);
+    fetchUsers(newState, userSearch);
+  };
 
   const columns = [
     {
       title: 'Email',
       dataIndex: 'email',
       key: 'email',
-      sorter: (a: TenantUser, b: TenantUser) => (a.email ?? '').localeCompare(b.email ?? ''),
+      sorter: true,
       render: (email: string) => <Text strong>{email}</Text>,
     },
     {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
-      sorter: (a: TenantUser, b: TenantUser) => (a.status ?? '').localeCompare(b.status ?? ''),
+      sorter: true,
       render: (status: string) => (
         <Tag color={STATUS_COLOR[status] ?? 'default'}>{status ?? '—'}</Tag>
       ),
@@ -220,7 +277,7 @@ export default function TenantAdminPage() {
       title: 'Created',
       dataIndex: 'createdAt',
       key: 'createdAt',
-      sorter: (a: TenantUser, b: TenantUser) => new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime(),
+      sorter: true,
       render: (t: string) => t ? new Date(t).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—',
     },
     {
@@ -290,35 +347,68 @@ export default function TenantAdminPage() {
         prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />}
         placeholder="Search by email or status…"
         value={userSearch}
-        onChange={e => setUserSearch(e.target.value)}
+        onChange={e => {
+          const value = e.target.value;
+          setUserSearch(value);
+          if (userSearchTimer.current) clearTimeout(userSearchTimer.current);
+          userSearchTimer.current = setTimeout(() => {
+            const resetState = { ...userTableState, page: 0 };
+            setUserTableState(resetState);
+            fetchUsers(resetState, value);
+          }, 400);
+        }}
         allowClear
+        onClear={() => {
+          const resetState = { ...userTableState, page: 0 };
+          setUserTableState(resetState);
+          fetchUsers(resetState, '');
+        }}
         style={{ marginBottom: 12, maxWidth: 320 }}
       />
       <Table
         loading={loading}
-        dataSource={filteredUsers}
+        dataSource={users}
         rowKey="username"
         columns={columns}
-        pagination={{ pageSize: 20, hideOnSinglePage: true, showSizeChanger: false }}
+        onChange={handleTableChange}
+        pagination={{
+          current: userTableState.page + 1,
+          pageSize: userTableState.pageSize,
+          total: userTotal,
+          showTotal: (t) => `${t} user${t !== 1 ? 's' : ''}`,
+          hideOnSinglePage: true,
+          showSizeChanger: false,
+        }}
         style={{ width: '100%' }}
         bordered
       />
 
-      {/* Upload Documents Drawer */}
+      {/* ── Upload Documents Drawer ── */}
       <Drawer
         title={<span style={{ color: '#fff', fontWeight: 700 }}>Upload documents</span>}
         placement="right"
         open={uploadDrawerOpen}
-        onClose={() => setUploadDrawerOpen(false)}
-        width={420}
+        onClose={resetUploadDrawer}
+        width={440}
         closeIcon={<span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 16 }}>✕</span>}
-        styles={{
-          header: { background: '#1e3a5f', borderBottom: '2px solid #e6a800', padding: '16px 20px' },
-          body: { paddingTop: 24 },
-        }}
+        styles={DRAWER_STYLES}
+        footer={
+          <Space style={{ float: 'right' }}>
+            <Button onClick={resetUploadDrawer} disabled={uploading}>Cancel</Button>
+            <Button
+              type="primary"
+              icon={<UploadOutlined />}
+              loading={uploading}
+              disabled={uploadFileList.length === 0}
+              onClick={handleUpload}
+            >
+              Upload{uploadFileList.length > 0 ? ` (${uploadFileList.length})` : ''}
+            </Button>
+          </Space>
+        }
       >
         <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
-          Files will be uploaded to the <strong>{tenantId}</strong> knowledge base folder and indexed automatically.
+          Files will be uploaded to the <strong>{tenantId}</strong> knowledge base and indexed automatically.
         </Text>
         <div style={{ marginBottom: 16 }}>
           <Text strong style={{ display: 'block', marginBottom: 6 }}>Access groups</Text>
@@ -326,10 +416,7 @@ export default function TenantAdminPage() {
             mode="multiple"
             options={DOCUMENT_TAG_OPTIONS}
             value={uploadGroups}
-            onChange={(vals) => {
-              setUploadGroups(vals);
-              uploadGroupsRef.current = vals;
-            }}
+            onChange={setUploadGroups}
             placeholder="Select groups that can access these documents"
             style={{ width: '100%' }}
             allowClear
@@ -338,16 +425,33 @@ export default function TenantAdminPage() {
             Leave empty to make documents accessible to all groups.
           </Text>
         </div>
-        <Dragger {...uploadProps}>
+        <Dragger
+          multiple
+          fileList={uploadFileList}
+          beforeUpload={(file) => {
+            const valid = ACCEPTED_MIME.has(file.type) || ACCEPTED_EXT.test(file.name);
+            if (!valid) {
+              message.error(`${file.name}: unsupported file type`);
+              return Upload.LIST_IGNORE;
+            }
+            setUploadFileList(prev => [...prev, file as unknown as UploadFile]);
+            return false;
+          }}
+          onRemove={(file) => {
+            setUploadFileList(prev => prev.filter(f => f.uid !== file.uid));
+          }}
+        >
           <p className="ant-upload-drag-icon">
             <InboxOutlined style={{ color: '#1e3a5f', fontSize: 48 }} />
           </p>
           <p className="ant-upload-text">Click or drag files to upload</p>
-          <p className="ant-upload-hint">Supports PDF, DOCX, TXT, MD, HTML and other text documents. Multiple files allowed.</p>
+          <p className="ant-upload-hint">
+            PDF, Word, Excel, PowerPoint, CSV, HTML, Markdown, plain text, images.
+          </p>
         </Dragger>
       </Drawer>
 
-      {/* Edit User Groups Drawer */}
+      {/* ── Edit User Groups Drawer ── */}
       <Drawer
         title={<span style={{ color: '#fff', fontWeight: 700 }}>Edit groups</span>}
         placement="right"
@@ -355,11 +459,7 @@ export default function TenantAdminPage() {
         onClose={() => { setEditUser(null); editGroupsForm.resetFields(); }}
         width={360}
         closeIcon={<span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 16 }}>✕</span>}
-        styles={{
-          header: { background: '#1e3a5f', borderBottom: '2px solid #e6a800', padding: '16px 20px' },
-          body: { paddingTop: 24 },
-          footer: { borderTop: '1px solid #f0f4fb' },
-        }}
+        styles={DRAWER_STYLES}
         footer={
           <Space style={{ float: 'right' }}>
             <Button onClick={() => { setEditUser(null); editGroupsForm.resetFields(); }}>Cancel</Button>
@@ -382,7 +482,7 @@ export default function TenantAdminPage() {
         </Form>
       </Drawer>
 
-      {/* Add User Drawer */}
+      {/* ── Add User Drawer ── */}
       <Drawer
         title={<span style={{ color: '#fff', fontWeight: 700 }}>Add user</span>}
         placement="right"
@@ -390,11 +490,7 @@ export default function TenantAdminPage() {
         onClose={() => { setDrawerOpen(false); form.resetFields(); }}
         width={360}
         closeIcon={<span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 16 }}>✕</span>}
-        styles={{
-          header: { background: '#1e3a5f', borderBottom: '2px solid #e6a800', padding: '16px 20px' },
-          body: { paddingTop: 24 },
-          footer: { borderTop: '1px solid #f0f4fb' },
-        }}
+        styles={DRAWER_STYLES}
         footer={
           <Space style={{ float: 'right' }}>
             <Button onClick={() => { setDrawerOpen(false); form.resetFields(); }}>Cancel</Button>
