@@ -212,8 +212,10 @@ export default function TenantAdminPage() {
         if (!res.ok) throw new Error(data.error || res.statusText);
         const { url, metadataUrl } = data;
 
-        // Upload metadata BEFORE document so it's already in S3 when ingestion runs
-        const metadata = JSON.stringify({ metadataAttributes: { groups: effectiveGroups } });
+        // Upload metadata BEFORE document so it's already in S3 when ingestion runs.
+        // tenantId is used for tenant isolation in the KB retrieve filter (equals operator,
+        // which works with S3 Vectors). groups is used for post-retrieval access control.
+        const metadata = JSON.stringify({ metadataAttributes: { tenantId, groups: effectiveGroups } });
         await fetch(metadataUrl, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },

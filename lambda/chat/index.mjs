@@ -123,80 +123,54 @@ export const handler = async (event) => {
     let retrievalResults = [];
 
     if (knowledgeBaseId) {
-      log.debug('RAG retrieval starting', { tenantId, knowledgeBaseId, docsPrefix, isAdmin, businessGroups });
+      log.debug('RAG retrieval starting', { tenantId, knowledgeBaseId, isAdmin, businessGroups });
       try {
-        const sourcePrefix = docsPrefix && DOCS_BUCKET_NAME
-          ? `s3://${DOCS_BUCKET_NAME}/${docsPrefix}`
-          : null;
+        // S3 Vectors only supports: equals, notEquals, greaterThan/LessThan, in, notIn.
+        // startsWith and listContains are OpenSearch Serverless only — do NOT use them.
+        //
+        // Tenant isolation: use equals filter on the custom 'tenantId' metadata attribute
+        // (stored in .metadata.json alongside each document).
+        //
+        // Group access control: post-filter in Lambda by inspecting result metadata.groups.
+        // This avoids needing unsupported listContains and correctly handles multi-value groups.
 
-        if (sourcePrefix) {
-          try {
-            // Build filter: tenant isolation + optional group filter for non-admin users
-            let filter;
-            const tenantFilter = { startsWith: { key: 'x-amz-bedrock-kb-source-uri', value: sourcePrefix } };
+        // Retrieve more candidates when we'll post-filter by groups
+        const needsGroupFilter = !isAdmin && businessGroups.length > 0;
+        const numberOfResults = needsGroupFilter ? 20 : 5;
 
-            if (!isAdmin && businessGroups.length > 0) {
-              // Include user's business groups + 'general' (accessible to all users)
-              const groupTags = [...businessGroups, 'general'];
-              filter = {
-                andAll: [
-                  tenantFilter,
-                  { orAll: groupTags.map(g => ({ listContains: { key: 'groups', value: g } })) },
-                ],
-              };
-              log.debug('Using group-filtered RAG query', { groupTags });
-            } else {
-              filter = tenantFilter;
-              log.debug('Using tenant-only RAG filter', { isAdmin });
-            }
+        const filter = { equals: { key: 'tenantId', value: tenantId } };
 
-            const resp = await bedrockAgentClient.send(new RetrieveCommand({
-              knowledgeBaseId,
-              retrievalQuery: { text: prompt },
-              retrievalConfiguration: {
-                vectorSearchConfiguration: { numberOfResults: 5, filter },
-              },
-            }));
-            retrievalResults = resp.retrievalResults || [];
-            log.info('RAG retrieval complete', { tenantId, resultCount: retrievalResults.length, filtered: true });
+        const resp = await bedrockAgentClient.send(new RetrieveCommand({
+          knowledgeBaseId,
+          retrievalQuery: { text: prompt },
+          retrievalConfiguration: {
+            vectorSearchConfiguration: { numberOfResults, filter },
+          },
+        }));
 
-            // If group-filtered query returned 0 results, retry without group filter
-            // so untagged (legacy) documents remain accessible
-            if (retrievalResults.length === 0 && !isAdmin && businessGroups.length > 0) {
-              log.warn('Group-filtered RAG returned 0 results, falling back to tenant-only filter', { tenantId, businessGroups });
-              const fallbackResp = await bedrockAgentClient.send(new RetrieveCommand({
-                knowledgeBaseId,
-                retrievalQuery: { text: prompt },
-                retrievalConfiguration: {
-                  vectorSearchConfiguration: { numberOfResults: 5, filter: tenantFilter },
-                },
-              }));
-              retrievalResults = fallbackResp.retrievalResults || [];
-              log.info('RAG fallback retrieval complete', { tenantId, resultCount: retrievalResults.length });
-            }
-          } catch (filterErr) {
-            log.warn('RAG filter query failed, retrying without filter', { tenantId, error: filterErr.message });
-          }
+        let results = resp.retrievalResults || [];
+        log.debug('RAG raw results', { tenantId, count: results.length, needsGroupFilter });
+
+        if (needsGroupFilter) {
+          // Post-filter: keep docs whose groups overlap with the user's groups or 'general'
+          const allowedGroups = new Set([...businessGroups, 'general']);
+          const filtered = results.filter(r => {
+            const docGroups = r.metadata?.groups;
+            if (!docGroups) return false; // no metadata → not accessible to group-restricted users
+            const docGroupList = Array.isArray(docGroups) ? docGroups : [String(docGroups).split(',')];
+            return docGroupList.some(g => allowedGroups.has(String(g).trim()));
+          });
+          log.info('RAG post-group-filter', { tenantId, before: results.length, after: filtered.length, businessGroups });
+          results = filtered.slice(0, 5);
+        } else {
+          results = results.slice(0, 5);
         }
 
-        // Fallback: retrieve without filter and post-filter by source URI prefix
-        if (retrievalResults.length === 0) {
-          log.debug('Falling back to unfiltered RAG retrieval', { tenantId, sourcePrefix });
-          const resp = await bedrockAgentClient.send(new RetrieveCommand({
-            knowledgeBaseId,
-            retrievalQuery: { text: prompt },
-            retrievalConfiguration: { vectorSearchConfiguration: { numberOfResults: 10 } },
-          }));
-          const all = resp.retrievalResults || [];
-          retrievalResults = sourcePrefix
-            ? all.filter(r => r.location?.s3Location?.uri?.startsWith(sourcePrefix))
-            : all;
-          log.info('Unfiltered RAG retrieval complete', { tenantId, totalResults: all.length, afterPrefixFilter: retrievalResults.length });
-        }
-
-        context = retrievalResults.map((r) => r.content.text).join('\n\n---\n\n');
+        retrievalResults = results;
+        log.info('RAG retrieval complete', { tenantId, resultCount: retrievalResults.length });
+        context = retrievalResults.map(r => r.content.text).join('\n\n---\n\n');
       } catch (err) {
-        log.error('RAG retrieve error', { tenantId, knowledgeBaseId, docsPrefix, error: err.message });
+        log.error('RAG retrieve error', { tenantId, knowledgeBaseId, error: err.message });
         context = '';
       }
     }
