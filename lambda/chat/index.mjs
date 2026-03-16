@@ -171,13 +171,24 @@ export const handler = async (event) => {
 
         // Group access control — post-filter for non-admin users with assigned groups.
         // listContains is not supported on S3 Vectors so this must run in Lambda.
+        // S3 Vectors returns array metadata as a JSON string '["HR","general"]' — must parse.
         if (!isAdmin && businessGroups.length > 0) {
           const allowedGroups = new Set([...businessGroups, 'general']);
           results = results.filter(r => {
-            const docGroups = r.metadata?.groups;
-            if (!docGroups) return true; // no groups metadata → accessible to all (legacy docs)
-            const list = Array.isArray(docGroups) ? docGroups : [String(docGroups)];
-            return list.some(g => allowedGroups.has(String(g).trim()));
+            const raw = r.metadata?.groups;
+            if (raw == null) return true; // no groups metadata → accessible to all (legacy docs)
+            let list;
+            if (Array.isArray(raw)) {
+              list = raw.map(String);
+            } else {
+              const s = String(raw).trim();
+              if (s.startsWith('[')) {
+                try { list = JSON.parse(s).map(String); } catch { list = [s]; }
+              } else {
+                list = s.split(',').map(x => x.trim()).filter(Boolean);
+              }
+            }
+            return list.some(g => allowedGroups.has(g));
           });
           log.info('RAG post-group-filter', { tenantId, after: results.length, businessGroups });
         }
