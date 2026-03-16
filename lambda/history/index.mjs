@@ -5,6 +5,12 @@ const db = new DynamoDBClient({});
 const CHAT_TABLE = process.env.CHAT_TABLE;
 const HISTORY_LIMIT = 20;
 
+const log = {
+  info:  (msg, ctx = {}) => console.log(JSON.stringify({ level: 'INFO',  msg, ...ctx })),
+  warn:  (msg, ctx = {}) => console.warn(JSON.stringify({ level: 'WARN',  msg, ...ctx })),
+  error: (msg, ctx = {}) => console.error(JSON.stringify({ level: 'ERROR', msg, ...ctx })),
+};
+
 export const handler = async (event) => {
   const connectionId = event.requestContext?.connectionId;
   if (!connectionId) return { statusCode: 400, body: 'Missing connectionId' };
@@ -19,6 +25,7 @@ export const handler = async (event) => {
   if (!user) return { statusCode: 400, body: 'Missing user' };
 
   const tenantUser = `${tenantId}#${user}`;
+  log.info('History action received', { connectionId, action: body.action, tenantId });
 
   if (body.action === 'history') {
     const resp = await db.send(new QueryCommand({
@@ -38,6 +45,8 @@ export const handler = async (event) => {
       text: item.text.S,
       timestamp: item.timestamp.S,
     })).reverse();
+
+    log.info('History returned', { connectionId, tenantId, messageCount: messages.length });
 
     await apiGw.send(new PostToConnectionCommand({
       ConnectionId: connectionId,
@@ -72,8 +81,10 @@ export const handler = async (event) => {
       ));
     }
 
+    log.info('History cleared', { connectionId, tenantId, itemCount: items.length });
     return { statusCode: 200 };
   }
 
+  log.warn('Unknown history action', { connectionId, action: body.action });
   return { statusCode: 400, body: 'Unknown action' };
 };

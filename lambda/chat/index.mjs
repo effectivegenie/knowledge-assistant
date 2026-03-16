@@ -7,6 +7,13 @@ const bedrockAgentClient = new BedrockAgentRuntimeClient({});
 const bedrockClient = new BedrockRuntimeClient({});
 const dynamo = new DynamoDBClient({});
 
+const log = {
+  info:  (msg, ctx = {}) => console.log(JSON.stringify({ level: 'INFO',  msg, ...ctx })),
+  warn:  (msg, ctx = {}) => console.warn(JSON.stringify({ level: 'WARN',  msg, ...ctx })),
+  debug: (msg, ctx = {}) => console.log(JSON.stringify({ level: 'DEBUG', msg, ...ctx })),
+  error: (msg, ctx = {}) => console.error(JSON.stringify({ level: 'ERROR', msg, ...ctx })),
+};
+
 const CHAT_TABLE = process.env.CHAT_TABLE;
 const TENANTS_TABLE = process.env.TENANTS_TABLE;
 const CONNECTIONS_TABLE = process.env.CONNECTIONS_TABLE;
@@ -91,9 +98,12 @@ export const handler = async (event) => {
         tenantId = connItem.Item.tenantId?.S || tenantId;
         userGroups = (connItem.Item.groups?.L || []).map(g => g.S);
         userEmail = connItem.Item.email?.S || userEmail;
+        log.debug('Connection record fetched', { connectionId, tenantId, email: userEmail, groupCount: userGroups.length });
+      } else {
+        log.warn('Connection record not found, using body values', { connectionId });
       }
     } catch (err) {
-      console.warn('Failed to fetch connection record, falling back to body values:', err.message);
+      log.warn('Failed to fetch connection record, falling back to body values', { connectionId, error: err.message });
     }
   }
 
@@ -103,6 +113,8 @@ export const handler = async (event) => {
   const isAdmin = userGroups.some(g => SYSTEM_GROUPS.includes(g));
   const businessGroups = userGroups.filter(g => !SYSTEM_GROUPS.includes(g));
 
+  log.info('Chat message received', { connectionId, tenantId, email: user, isAdmin, businessGroupCount: businessGroups.length });
+
   try {
     await saveMessage(tenantUser, 'user', prompt);
 
@@ -111,6 +123,7 @@ export const handler = async (event) => {
     let retrievalResults = [];
 
     if (knowledgeBaseId) {
+      log.debug('RAG retrieval starting', { tenantId, knowledgeBaseId, docsPrefix, isAdmin, businessGroups });
       try {
         const sourcePrefix = docsPrefix && DOCS_BUCKET_NAME
           ? `s3://${DOCS_BUCKET_NAME}/${docsPrefix}`
@@ -131,8 +144,10 @@ export const handler = async (event) => {
                   { orAll: groupTags.map(g => ({ listContains: { key: 'groups', value: g } })) },
                 ],
               };
+              log.debug('Using group-filtered RAG query', { groupTags });
             } else {
               filter = tenantFilter;
+              log.debug('Using tenant-only RAG filter', { isAdmin });
             }
 
             const resp = await bedrockAgentClient.send(new RetrieveCommand({
@@ -143,10 +158,12 @@ export const handler = async (event) => {
               },
             }));
             retrievalResults = resp.retrievalResults || [];
+            log.info('RAG retrieval complete', { tenantId, resultCount: retrievalResults.length, filtered: true });
 
             // If group-filtered query returned 0 results, retry without group filter
             // so untagged (legacy) documents remain accessible
             if (retrievalResults.length === 0 && !isAdmin && businessGroups.length > 0) {
+              log.warn('Group-filtered RAG returned 0 results, falling back to tenant-only filter', { tenantId, businessGroups });
               const fallbackResp = await bedrockAgentClient.send(new RetrieveCommand({
                 knowledgeBaseId,
                 retrievalQuery: { text: prompt },
@@ -155,14 +172,16 @@ export const handler = async (event) => {
                 },
               }));
               retrievalResults = fallbackResp.retrievalResults || [];
+              log.info('RAG fallback retrieval complete', { tenantId, resultCount: retrievalResults.length });
             }
           } catch (filterErr) {
-            console.warn('RAG filter query failed, retrying without filter:', filterErr.message);
+            log.warn('RAG filter query failed, retrying without filter', { tenantId, error: filterErr.message });
           }
         }
 
         // Fallback: retrieve without filter and post-filter by source URI prefix
         if (retrievalResults.length === 0) {
+          log.debug('Falling back to unfiltered RAG retrieval', { tenantId, sourcePrefix });
           const resp = await bedrockAgentClient.send(new RetrieveCommand({
             knowledgeBaseId,
             retrievalQuery: { text: prompt },
@@ -172,11 +191,12 @@ export const handler = async (event) => {
           retrievalResults = sourcePrefix
             ? all.filter(r => r.location?.s3Location?.uri?.startsWith(sourcePrefix))
             : all;
+          log.info('Unfiltered RAG retrieval complete', { tenantId, totalResults: all.length, afterPrefixFilter: retrievalResults.length });
         }
 
         context = retrievalResults.map((r) => r.content.text).join('\n\n---\n\n');
       } catch (err) {
-        console.error('RAG retrieve error (tenant:', tenantId, 'kb:', knowledgeBaseId, 'prefix:', docsPrefix, '):', err);
+        log.error('RAG retrieve error', { tenantId, knowledgeBaseId, docsPrefix, error: err.message });
         context = '';
       }
     }
@@ -193,6 +213,8 @@ export const handler = async (event) => {
     ];
 
     let assistantMessage = '';
+
+    log.debug('Invoking model', { provider: MODEL_PROVIDER, historyLength: history.length, hasContext: context.length > 0 });
 
     if (MODEL_PROVIDER === 'openai') {
       const apiKey = process.env.OPENAI_API_KEY;
@@ -230,6 +252,7 @@ export const handler = async (event) => {
       if (assistantMessage) {
         await postToConnection(apiGw, connectionId, { type: 'chunk', content: assistantMessage });
       }
+      log.info('OpenAI response sent', { connectionId, tenantId, responseLength: assistantMessage.length });
     } else {
       const requestBody = JSON.stringify({
         anthropic_version: 'bedrock-2023-05-31',
@@ -261,6 +284,7 @@ export const handler = async (event) => {
     }
 
     await postToConnection(apiGw, connectionId, { type: 'end' });
+    log.info('Chat response complete', { connectionId, tenantId, responseLength: assistantMessage.length });
 
     // Send citations for the sources used in this response
     if (retrievalResults.length > 0) {
@@ -270,11 +294,12 @@ export const handler = async (event) => {
         excerpt: (r.content?.text || '').slice(0, 200),
       }));
       await postToConnection(apiGw, connectionId, { type: 'citations', citations });
+      log.info('Citations sent', { connectionId, tenantId, citationCount: citations.length });
     }
 
     return { statusCode: 200, body: 'OK' };
   } catch (err) {
-    console.error('Chat error:', err);
+    log.error('Chat handler error', { connectionId, tenantId: tenantId ?? 'unknown', error: err.message });
     await postToConnection(apiGw, connectionId, { type: 'error', message: err.message });
     return { statusCode: 500, body: 'Error' };
   }

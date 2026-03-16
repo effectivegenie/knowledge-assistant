@@ -63,6 +63,15 @@ describe('tenant-admin handler — authorization', () => {
     const res = await handler(event);
     expect(res.statusCode).toBe(200);
   });
+
+  it('allows TenantAdmin when groups claim is a space-separated bracketed string (multi-group Cognito format)', async () => {
+    // Cognito JWT claim format when user belongs to multiple groups:
+    // "[operations warehouse marketing security TenantAdmin IT financial sales accounting logistics]"
+    const raw = '[operations warehouse marketing security TenantAdmin IT financial sales accounting logistics]';
+    const event = makeEvent({ groups: raw, tenantId: 'acme' });
+    const res = await handler(event);
+    expect(res.statusCode).toBe(200);
+  });
 });
 
 function makeCreateUserEvent(body, groups = ['TenantAdmin'], tenantId = 'acme') {

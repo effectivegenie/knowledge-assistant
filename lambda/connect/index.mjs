@@ -5,6 +5,13 @@ import { createVerify, createPublicKey } from 'crypto';
 const ddbClient = new DynamoDBClient({});
 const ddb = DynamoDBDocumentClient.from(ddbClient);
 
+const log = {
+  info:  (msg, ctx = {}) => console.log(JSON.stringify({ level: 'INFO',  msg, ...ctx })),
+  warn:  (msg, ctx = {}) => console.warn(JSON.stringify({ level: 'WARN',  msg, ...ctx })),
+  debug: (msg, ctx = {}) => console.log(JSON.stringify({ level: 'DEBUG', msg, ...ctx })),
+  error: (msg, ctx = {}) => console.error(JSON.stringify({ level: 'ERROR', msg, ...ctx })),
+};
+
 // Module-level JWKS cache — lives for the Lambda container lifetime
 let cachedJwks = null;
 
@@ -16,7 +23,11 @@ async function fetchJwks(jwksUri) {
 }
 
 async function getJwks(jwksUri, forceRefresh = false) {
-  if (!forceRefresh && cachedJwks) return cachedJwks;
+  if (!forceRefresh && cachedJwks) {
+    log.debug('JWKS cache hit');
+    return cachedJwks;
+  }
+  log.debug('Fetching JWKS from Cognito', { forceRefresh });
   return fetchJwks(jwksUri);
 }
 
@@ -30,6 +41,8 @@ export const verifyJwt = async (token) => {
   const payload = JSON.parse(Buffer.from(payloadB64.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString());
 
   const { kid, alg } = header;
+  log.debug('Verifying JWT', { kid, alg, sub: payload.sub });
+
   if (alg !== 'RS256') throw new Error(`Unsupported algorithm: ${alg}`);
 
   const expectedIssuer = `https://cognito-idp.${process.env.AWS_REGION}.amazonaws.com/${process.env.USER_POOL_ID}`;
@@ -46,6 +59,7 @@ export const verifyJwt = async (token) => {
   let jwks = await getJwks(jwksUri);
   let jwk = jwks.keys?.find(k => k.kid === kid);
   if (!jwk) {
+    log.warn('JWK kid not found in cache, forcing JWKS refresh', { kid });
     jwks = await getJwks(jwksUri, true);
     jwk = jwks.keys?.find(k => k.kid === kid);
   }
@@ -65,32 +79,43 @@ export const verifyJwt = async (token) => {
 };
 
 export const handler = async (event) => {
+  const connectionId = event.requestContext.connectionId;
+  log.info('WebSocket connect attempt', { connectionId });
+
   const token = event.queryStringParameters?.token;
   if (!token) {
+    log.warn('Connect rejected: missing token', { connectionId });
     return { statusCode: 401, body: 'Unauthorized' };
   }
 
   let payload;
   try {
     payload = await verifyJwt(token);
-  } catch {
+  } catch (err) {
+    log.warn('Connect rejected: JWT verification failed', { connectionId, reason: err.message });
     return { statusCode: 401, body: 'Unauthorized' };
   }
 
   const tenantId = payload['custom:tenantId'] || 'default';
   const groups = payload['cognito:groups'] || [];
 
-  await ddb.send(new PutCommand({
-    TableName: process.env.CONNECTIONS_TABLE,
-    Item: {
-      connectionId: event.requestContext.connectionId,
-      userId: payload.sub,
-      email: payload.email || 'unknown',
-      tenantId,
-      groups,
-      connectedAt: new Date().toISOString(),
-    },
-  }));
+  try {
+    await ddb.send(new PutCommand({
+      TableName: process.env.CONNECTIONS_TABLE,
+      Item: {
+        connectionId,
+        userId: payload.sub,
+        email: payload.email || 'unknown',
+        tenantId,
+        groups,
+        connectedAt: new Date().toISOString(),
+      },
+    }));
+  } catch (err) {
+    log.error('Failed to persist connection record', { connectionId, tenantId, error: err.message });
+    return { statusCode: 500, body: 'Internal error' };
+  }
 
+  log.info('WebSocket connected', { connectionId, tenantId, email: payload.email, groupCount: groups.length });
   return { statusCode: 200, body: 'Connected' };
 };

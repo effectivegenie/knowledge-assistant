@@ -8,6 +8,13 @@ const cognito     = new CognitoIdentityProviderClient({});
 const bedrockAgent = new BedrockAgentClient({});
 const s3          = new S3Client({});
 
+const log = {
+  info:  (msg, ctx = {}) => console.log(JSON.stringify({ level: 'INFO',  msg, ...ctx })),
+  warn:  (msg, ctx = {}) => console.warn(JSON.stringify({ level: 'WARN',  msg, ...ctx })),
+  debug: (msg, ctx = {}) => console.log(JSON.stringify({ level: 'DEBUG', msg, ...ctx })),
+  error: (msg, ctx = {}) => console.error(JSON.stringify({ level: 'ERROR', msg, ...ctx })),
+};
+
 const TENANTS_TABLE            = process.env.TENANTS_TABLE;
 const CHAT_TABLE               = process.env.CHAT_TABLE;
 const USER_POOL_ID             = process.env.USER_POOL_ID;
@@ -39,7 +46,7 @@ export function parseGroups(raw) {
   if (typeof raw === 'string') {
     if (raw.startsWith('[') && raw.endsWith(']')) {
       try { return JSON.parse(raw); } catch {}
-      return raw.slice(1, -1).split(',').map(s => s.trim()).filter(Boolean);
+      return raw.slice(1, -1).split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
     }
     return raw.split(/[\s,]+/).filter(Boolean);
   }
@@ -54,27 +61,28 @@ function getGroupsFromClaims(event) {
 
 export const handler = async (event) => {
   const auth = event.requestContext?.authorizer?.jwt?.claims || {};
-  console.log('AdminFn claims:', JSON.stringify({
-    sub: auth['sub'],
-    email: auth['email'],
-    groups_raw: auth['cognito:groups'],
-    groups_type: typeof auth['cognito:groups'],
-    path: event.requestContext?.http?.path,
-    method: event.requestContext?.http?.method,
-  }));
-
-  const groups = getGroupsFromClaims(event);
-  const isRootAdmin = groups.includes('RootAdmin');
-  console.log('AdminFn parsed groups:', groups, 'isRootAdmin:', isRootAdmin);
-
   const path   = event.requestContext?.http?.path || event.path || '';
   const method = event.requestContext?.http?.method || event.httpMethod || '';
   const pathParams = event.pathParameters || {};
 
-  if (!isRootAdmin) return jsonResponse(403, { error: 'Forbidden' });
+  log.debug('Admin request received', {
+    method, path,
+    sub: auth['sub'], email: auth['email'],
+    groups_raw: auth['cognito:groups'], groups_type: typeof auth['cognito:groups'],
+  });
+
+  const groups = getGroupsFromClaims(event);
+  const isRootAdmin = groups.includes('RootAdmin');
+  log.debug('Authorization', { groups, isRootAdmin });
+
+  if (!isRootAdmin) {
+    log.warn('Admin access denied', { method, path, sub: auth['sub'], email: auth['email'] });
+    return jsonResponse(403, { error: 'Forbidden' });
+  }
 
   // ── GET /tenants ──────────────────────────────────────────────────────────
   if (method === 'GET' && path === '/tenants') {
+    log.info('Listing tenants');
     const scan = await dynamo.send(new ScanCommand({ TableName: TENANTS_TABLE }));
     const hasDefault = (scan.Items || []).some(i => i.tenantId?.S === 'default');
     if (!hasDefault && DEFAULT_KNOWLEDGE_BASE_ID && DEFAULT_DATA_SOURCE_ID) {
@@ -109,6 +117,8 @@ export const handler = async (event) => {
     const id = String(tenantId).trim().toLowerCase().replace(/[^a-z0-9-]/g, '-');
     if (!id) return jsonResponse(400, { error: 'Invalid tenantId' });
 
+    log.info('Creating tenant', { tenantId: id, name, adminEmail });
+
     // Create Cognito admin user
     try {
       await cognito.send(new AdminCreateUserCommand({
@@ -135,8 +145,9 @@ export const handler = async (event) => {
           GroupName: group,
         }));
       }
+      log.info('Cognito admin user created and groups assigned', { adminEmail, tenantId: id });
     } catch (err) {
-      console.error('Cognito create user error:', err);
+      log.error('Failed to create Cognito admin user', { adminEmail, tenantId: id, error: err.message });
       return jsonResponse(400, { error: 'Failed to create tenant admin user', detail: err.message });
     }
 
@@ -154,9 +165,9 @@ export const handler = async (event) => {
           dataDeletionPolicy: 'RETAIN',
         }));
         dataSourceId = dsResult.dataSource.dataSourceId;
-        console.log('Created data source', dataSourceId, 'for tenant', id);
+        log.info('Bedrock data source created', { tenantId: id, dataSourceId });
       } catch (err) {
-        console.error('Bedrock CreateDataSource error (falling back to default):', err);
+        log.warn('Bedrock CreateDataSource failed, falling back to default data source', { tenantId: id, error: err.message });
       }
     }
 
@@ -172,14 +183,15 @@ export const handler = async (event) => {
         createdAt:      { S: new Date().toISOString() },
       },
     }));
+    log.info('Tenant DynamoDB record written', { tenantId: id });
 
     // Create S3 folder placeholder (DynamoDB record already exists so sync Lambda uses correct data source)
     if (DOCS_BUCKET_NAME) {
       try {
         await s3.send(new PutObjectCommand({ Bucket: DOCS_BUCKET_NAME, Key: `${id}/`, Body: '' }));
-        console.log('Created S3 folder', `${id}/`);
+        log.info('S3 tenant folder created', { tenantId: id, key: `${id}/` });
       } catch (err) {
-        console.error('S3 folder creation error (non-fatal):', err);
+        log.error('S3 folder creation failed (non-fatal)', { tenantId: id, error: err.message });
       }
     }
 
@@ -190,9 +202,9 @@ export const handler = async (event) => {
           knowledgeBaseId: DEFAULT_KNOWLEDGE_BASE_ID,
           dataSourceId,
         }));
-        console.log('Started initial ingestion job for tenant', id, 'dataSource', dataSourceId);
+        log.info('Initial ingestion job started', { tenantId: id, dataSourceId });
       } catch (err) {
-        console.error('StartIngestionJob error (non-fatal):', err);
+        log.error('StartIngestionJob failed (non-fatal)', { tenantId: id, dataSourceId, error: err.message });
       }
     }
 
@@ -211,11 +223,13 @@ export const handler = async (event) => {
       ExpressionAttributeNames:  { '#n': 'name' },
       ExpressionAttributeValues: { ':name': { S: String(name) } },
     }));
+    log.info('Tenant updated', { tenantId: tenantIdParam, name });
     return jsonResponse(200, { tenantId: tenantIdParam, name });
   }
 
   // ── DELETE /tenants/{tenantId} ────────────────────────────────────────────
   if (method === 'DELETE' && tenantIdParam) {
+    log.info('Deleting tenant', { tenantId: tenantIdParam });
     try {
       // Fetch tenant record first to get dataSourceId, knowledgeBaseId
       let tenantItem;
@@ -226,7 +240,7 @@ export const handler = async (event) => {
         }));
         tenantItem = getRes.Item;
       } catch (err) {
-        console.error('Error fetching tenant record (non-fatal):', err);
+        log.error('Error fetching tenant record before delete (non-fatal)', { tenantId: tenantIdParam, error: err.message });
       }
       const kbId = tenantItem?.knowledgeBaseId?.S;
       const dsId = tenantItem?.dataSourceId?.S;
@@ -247,12 +261,12 @@ export const handler = async (event) => {
                 Bucket: DOCS_BUCKET_NAME,
                 Delete: { Objects: objects, Quiet: true },
               }));
-              console.log('Deleted', objects.length, 'S3 objects for tenant', tenantIdParam);
+              log.info('S3 objects deleted', { tenantId: tenantIdParam, count: objects.length });
             }
             continuationToken = listRes.IsTruncated ? listRes.NextContinuationToken : undefined;
           } while (continuationToken);
         } catch (err) {
-          console.error('Error deleting S3 objects (non-fatal):', err);
+          log.error('Error deleting S3 objects (non-fatal)', { tenantId: tenantIdParam, error: err.message });
         }
       }
 
@@ -263,11 +277,11 @@ export const handler = async (event) => {
             knowledgeBaseId: kbId,
             dataSourceId: dsId,
           }));
-          console.log('Deleted Bedrock data source', dsId, 'for tenant', tenantIdParam);
+          log.info('Bedrock data source deleted', { tenantId: tenantIdParam, dataSourceId: dsId });
         } catch (err) {
           // ConflictException: vector store deletion not permitted — data source is left orphaned
           // but S3 objects and DynamoDB record are already removed so it causes no harm
-          console.error('Error deleting Bedrock data source (non-fatal, may need manual cleanup):', err.message);
+          log.warn('Bedrock data source deletion failed (non-fatal, may need manual cleanup)', { tenantId: tenantIdParam, dataSourceId: dsId, error: err.message });
         }
       }
 
@@ -289,11 +303,11 @@ export const handler = async (event) => {
                 Key: { tenantUser: item.tenantUser, timestamp: item.timestamp },
               }))
             ));
-            console.log('Deleted', items.length, 'chat history items for tenant', tenantIdParam);
+            log.info('Chat history items deleted', { tenantId: tenantIdParam, count: items.length });
             lastKey = scanRes.LastEvaluatedKey;
           } while (lastKey);
         } catch (err) {
-          console.error('Error deleting chat history (non-fatal):', err);
+          log.error('Error deleting chat history (non-fatal)', { tenantId: tenantIdParam, error: err.message });
         }
       }
 
@@ -303,8 +317,9 @@ export const handler = async (event) => {
           TableName: TENANTS_TABLE,
           Key: { tenantId: { S: tenantIdParam } },
         }));
+        log.info('Tenant DynamoDB record deleted', { tenantId: tenantIdParam });
       } catch (err) {
-        console.error('Error deleting tenant DynamoDB record:', err);
+        log.error('Failed to delete tenant DynamoDB record', { tenantId: tenantIdParam, error: err.message });
         throw err; // re-throw — this is the critical step
       }
 
@@ -317,14 +332,14 @@ export const handler = async (event) => {
         await Promise.all(toDelete.map(u =>
           cognito.send(new AdminDeleteUserCommand({ UserPoolId: USER_POOL_ID, Username: u.Username }))
         ));
-        console.log('Deleted', toDelete.length, 'Cognito users for tenant', tenantIdParam);
+        log.info('Cognito users deleted', { tenantId: tenantIdParam, count: toDelete.length });
       } catch (err) {
-        console.error('Error deleting Cognito users (non-fatal):', err);
+        log.error('Error deleting Cognito users (non-fatal)', { tenantId: tenantIdParam, error: err.message });
       }
 
       return jsonResponse(200, { deleted: tenantIdParam });
     } catch (err) {
-      console.error('DELETE /tenants error:', err);
+      log.error('DELETE /tenants failed', { tenantId: tenantIdParam, error: err.message });
       return jsonResponse(500, { error: err.message || 'Failed to delete tenant' });
     }
   }

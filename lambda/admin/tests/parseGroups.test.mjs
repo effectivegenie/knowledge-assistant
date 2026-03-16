@@ -70,4 +70,12 @@ describe('parseGroups', () => {
   it('returns empty array for empty brackets', () => {
     expect(parseGroups('[]')).toEqual([]);
   });
+
+  it('parses space-separated bracketed string (Cognito JWT claim format with multiple groups)', () => {
+    const raw = '[operations warehouse marketing security TenantAdmin IT financial sales accounting logistics]';
+    const result = parseGroups(raw);
+    expect(result).toContain('TenantAdmin');
+    expect(result).toContain('operations');
+    expect(result).toHaveLength(10);
+  });
 });

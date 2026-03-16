@@ -5,6 +5,13 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 const cognito = new CognitoIdentityProviderClient({});
 const s3 = new S3Client({});
 
+const log = {
+  info:  (msg, ctx = {}) => console.log(JSON.stringify({ level: 'INFO',  msg, ...ctx })),
+  warn:  (msg, ctx = {}) => console.warn(JSON.stringify({ level: 'WARN',  msg, ...ctx })),
+  debug: (msg, ctx = {}) => console.log(JSON.stringify({ level: 'DEBUG', msg, ...ctx })),
+  error: (msg, ctx = {}) => console.error(JSON.stringify({ level: 'ERROR', msg, ...ctx })),
+};
+
 const USER_POOL_ID      = process.env.USER_POOL_ID;
 const DOCS_BUCKET_NAME  = process.env.DOCS_BUCKET_NAME;
 
@@ -34,7 +41,7 @@ function parseGroups(raw) {
   if (typeof raw === 'string') {
     if (raw.startsWith('[') && raw.endsWith(']')) {
       try { return JSON.parse(raw); } catch {}
-      return raw.slice(1, -1).split(',').map(s => s.trim()).filter(Boolean);
+      return raw.slice(1, -1).split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
     }
     return raw.split(/[\s,]+/).filter(Boolean);
   }
@@ -54,16 +61,21 @@ export const handler = async (event) => {
 
   const tenantIdFromPath = pathParams.tenantId || path.match(/^\/tenants\/([^/]+)/)?.[1] || null;
 
-  console.log('TenantAdminFn:', JSON.stringify({
-    method, path, tenantIdFromPath,
-    userTenantId,
+  log.debug('TenantAdmin request', {
+    method, path, tenantIdFromPath, userTenantId,
     groups_raw: claims['cognito:groups'],
     groups_parsed: groups,
     isTenantAdmin, isRootAdmin,
-  }));
+  });
 
   if (!tenantIdFromPath) return jsonResponse(404, { error: 'Not found' });
   if (!isRootAdmin && (!isTenantAdmin || userTenantId !== tenantIdFromPath)) {
+    log.warn('TenantAdmin access denied', {
+      method, path, userTenantId, tenantIdFromPath, isTenantAdmin, isRootAdmin,
+      groups_parsed: groups,
+      groups_raw: claims['cognito:groups'],
+      groups_raw_type: typeof claims['cognito:groups'],
+    });
     return jsonResponse(403, { error: 'Forbidden', detail: {
       userTenantId, tenantIdFromPath, isTenantAdmin, isRootAdmin,
       groups_parsed: groups,
@@ -95,15 +107,17 @@ export const handler = async (event) => {
         new PutObjectCommand({ Bucket: DOCS_BUCKET_NAME, Key: metadataKey, ContentType: 'application/json' }),
         { expiresIn: 300 },
       );
+      log.info('Upload URL generated', { tenantId: tenantIdFromPath, key, groups: docGroups });
       return jsonResponse(200, { url, metadataUrl, key });
     } catch (err) {
-      console.error('Presign error:', err);
+      log.error('Presigned URL generation failed', { tenantId: tenantIdFromPath, key, error: err.message });
       return jsonResponse(500, { error: 'Failed to generate upload URL' });
     }
   }
 
   // ── GET /tenants/{tenantId}/users ─────────────────────────────────────────
   if (method === 'GET') {
+    log.info('Listing tenant users', { tenantId: tenantIdFromPath });
     const list = await cognito.send(new ListUsersCommand({ UserPoolId: USER_POOL_ID, Limit: 60 }));
     const attrs = (u) => (u.Attributes || []).reduce((acc, a) => ({ ...acc, [a.Name]: a.Value }), {});
     const users = (list.Users || [])
@@ -147,9 +161,10 @@ export const handler = async (event) => {
           GroupName: group,
         }));
       }
+      log.info('Tenant user created', { email, tenantId: tenantIdFromPath, businessGroups: requestedGroups });
       return jsonResponse(200, { email, tenantId: tenantIdFromPath, businessGroups: requestedGroups });
     } catch (err) {
-      console.error('Cognito create user error:', err);
+      log.error('Failed to create tenant user', { email, tenantId: tenantIdFromPath, error: err.message });
       return jsonResponse(400, { error: 'Failed to create user', detail: err.message });
     }
   }
@@ -159,9 +174,10 @@ export const handler = async (event) => {
   if (method === 'DELETE' && username) {
     try {
       await cognito.send(new AdminDeleteUserCommand({ UserPoolId: USER_POOL_ID, Username: username }));
+      log.info('Tenant user deleted', { username, tenantId: tenantIdFromPath });
       return jsonResponse(200, { deleted: username });
     } catch (err) {
-      console.error('AdminDeleteUser error:', err);
+      log.error('Failed to delete tenant user', { username, tenantId: tenantIdFromPath, error: err.message });
       return jsonResponse(400, { error: 'Failed to delete user', detail: err.message });
     }
   }

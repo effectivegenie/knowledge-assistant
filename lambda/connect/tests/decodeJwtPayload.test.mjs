@@ -13,9 +13,11 @@ vi.mock('@aws-sdk/lib-dynamodb', () => ({
 
 import { handler } from '../index.mjs';
 
+const baseEvent = { requestContext: { connectionId: 'test-conn-id' } };
+
 describe('connect handler — token guard', () => {
   it('returns 401 when no token is supplied', async () => {
-    const event = { queryStringParameters: {} };
+    const event = { ...baseEvent, queryStringParameters: {} };
     const res = await handler(event);
     expect(res.statusCode).toBe(401);
   });
@@ -25,7 +27,7 @@ describe('connect handler — token guard', () => {
       ok: true,
       json: () => Promise.resolve({ keys: [] }),
     }));
-    const event = { queryStringParameters: { token: 'notajwt' } };
+    const event = { ...baseEvent, queryStringParameters: { token: 'notajwt' } };
     const res = await handler(event);
     expect(res.statusCode).toBe(401);
   });
