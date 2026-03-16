@@ -298,7 +298,7 @@ export default function App() {
           placement="left"
           open={drawerOpen}
           onClose={() => setDrawerOpen(false)}
-          width={240}
+          width={312}
           title={
             <Space size={10}>
               <img src="/genie-logo-final-2-no-text.png" alt="" style={{ height: 54, objectFit: 'contain' }} />
