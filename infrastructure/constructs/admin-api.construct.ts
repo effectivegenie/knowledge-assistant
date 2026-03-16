@@ -25,6 +25,7 @@ export interface AdminApiProps {
  */
 export class AdminApiConstruct extends Construct {
   public readonly apiUrl: string;
+  public readonly api: apigwv2.CfnApi;
 
   constructor(scope: Construct, id: string, props: AdminApiProps) {
     super(scope, id);
@@ -500,6 +501,7 @@ export class AdminApiConstruct extends Construct {
     contractsFn.addPermission('ApiGwContractsInvoke', { principal: apigwPrincipal, sourceArn: sourceArnPrefix });
     documentsFn.addPermission('ApiGwDocumentsInvoke', { principal: apigwPrincipal, sourceArn: sourceArnPrefix });
 
+    this.api    = api;
     this.apiUrl = `https://${api.ref}.execute-api.${region}.amazonaws.com`;
   }
 }

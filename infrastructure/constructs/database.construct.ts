@@ -29,6 +29,7 @@ export class DatabaseConstruct extends Construct {
     this.tenantsTable = new dynamodb.Table(this, 'TenantsTable', {
       partitionKey: { name: 'tenantId', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecovery: true,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
@@ -36,6 +37,7 @@ export class DatabaseConstruct extends Construct {
       partitionKey: { name: 'tenantId', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'invoiceId', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecovery: true,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
@@ -59,6 +61,7 @@ export class DatabaseConstruct extends Construct {
       partitionKey: { name: 'tenantId', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'contractId', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecovery: true,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 

@@ -9,6 +9,7 @@ import { ComputeConstruct } from './constructs/compute.construct';
 import { WebSocketApiConstruct } from './constructs/websocket-api.construct';
 import { AdminApiConstruct } from './constructs/admin-api.construct';
 import { FrontendConstruct } from './constructs/frontend.construct';
+import { MonitoringConstruct } from './constructs/monitoring.construct';
 
 export class KnowledgeAssistantStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -47,6 +48,15 @@ export class KnowledgeAssistantStack extends cdk.Stack {
       userPool: auth.userPool,
       userPoolClient: auth.userPoolClient,
     });
+    new MonitoringConstruct(this, 'Monitoring', {
+      chatFn:              compute.chatFn,
+      invoicesFn:          compute.invoicesFn,
+      contractsFn:         compute.contractsFn,
+      invoiceProcessorFn:  compute.invoiceProcessorFn,
+      contractProcessorFn: compute.contractProcessorFn,
+      httpApi:             adminApi.api,
+    });
+
     const frontend = new FrontendConstruct(this, 'Frontend', {
       frontendBucket: storage.frontendBucket,
     });
