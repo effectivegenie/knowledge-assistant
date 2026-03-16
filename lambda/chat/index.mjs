@@ -169,6 +169,18 @@ export const handler = async (event) => {
 
         log.debug('RAG after tenant isolation', { tenantId, count: results.length });
 
+        // Log first result metadata for diagnostics
+        if (results.length > 0) {
+          const sample = results[0].metadata || {};
+          log.debug('RAG sample metadata', {
+            tenantId,
+            groupsRaw: sample.groups,
+            groupsType: typeof sample.groups,
+            groupsIsArray: Array.isArray(sample.groups),
+            metadataKeys: Object.keys(sample),
+          });
+        }
+
         // Group access control — post-filter for non-admin users with assigned groups.
         // listContains is not supported on S3 Vectors so this must run in Lambda.
         // S3 Vectors returns array metadata as a JSON string '["HR","general"]' — must parse.
@@ -188,6 +200,7 @@ export const handler = async (event) => {
                 list = s.split(',').map(x => x.trim()).filter(Boolean);
               }
             }
+            log.debug('RAG group check', { raw, list, allowed: [...allowedGroups], pass: list.some(g => allowedGroups.has(g)) });
             return list.some(g => allowedGroups.has(g));
           });
           log.info('RAG post-group-filter', { tenantId, after: results.length, businessGroups });
