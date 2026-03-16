@@ -46,7 +46,7 @@ Each tenant is an isolated workspace with:
 
 ### InvoicesTable
 
-Stores extracted invoice records produced by the document-processor Lambda.
+Stores extracted invoice records produced by the invoice-processor Lambda.
 
 | Attribute | Type | Notes |
 |---|---|---|

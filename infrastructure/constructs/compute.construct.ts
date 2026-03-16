@@ -32,7 +32,7 @@ export class ComputeConstruct extends Construct {
   public readonly adminFn: lambda.Function;
   public readonly tenantAdminFn: lambda.Function;
   public readonly invoicesFn: lambda.Function;
-  public readonly documentProcessorFn: lambda.Function;
+  public readonly invoiceProcessorFn: lambda.Function;
 
   constructor(scope: Construct, id: string, props: ComputeProps) {
     super(scope, id);
@@ -205,11 +205,11 @@ export class ComputeConstruct extends Construct {
     tenantsTable.grantReadWriteData(this.invoicesFn);
     docsBucket.grantRead(this.invoicesFn);
 
-    // ── Document Processor ───────────────────────────────────────────────────
-    this.documentProcessorFn = new lambda.Function(this, 'DocumentProcessorFunction', {
+    // ── Invoice Processor ────────────────────────────────────────────────────
+    this.invoiceProcessorFn = new lambda.Function(this, 'InvoiceProcessorFunction', {
       runtime: lambda.Runtime.NODEJS_20_X,
       handler: 'index.handler',
-      code: lambda.Code.fromAsset(path.join(__dirname, '../../lambda/document-processor')),
+      code: lambda.Code.fromAsset(path.join(__dirname, '../../lambda/invoice-processor')),
       timeout: cdk.Duration.minutes(3),
       memorySize: 512,
       environment: {
@@ -218,10 +218,10 @@ export class ComputeConstruct extends Construct {
         MODEL_ID: 'eu.anthropic.claude-haiku-4-5-20251001-v1:0',
       },
     });
-    invoicesTable.grantReadWriteData(this.documentProcessorFn);
-    tenantsTable.grantReadData(this.documentProcessorFn);
-    docsBucket.grantRead(this.documentProcessorFn);
-    this.documentProcessorFn.addToRolePolicy(new iam.PolicyStatement({
+    invoicesTable.grantReadWriteData(this.invoiceProcessorFn);
+    tenantsTable.grantReadData(this.invoiceProcessorFn);
+    docsBucket.grantRead(this.invoiceProcessorFn);
+    this.invoiceProcessorFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
       resources: [
         `arn:aws:bedrock:${stack.region}:${stack.account}:inference-profile/eu.anthropic.claude-haiku-4-5-20251001-v1:0`,
@@ -229,7 +229,7 @@ export class ComputeConstruct extends Construct {
         'arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
       ],
     }));
-    // Subscribe documentProcessorFn to the shared OBJECT_CREATED topic
-    objectCreatedTopicRef.addSubscription(new subs.LambdaSubscription(this.documentProcessorFn));
+    // Subscribe invoiceProcessorFn to the shared OBJECT_CREATED topic
+    objectCreatedTopicRef.addSubscription(new subs.LambdaSubscription(this.invoiceProcessorFn));
   }
 }

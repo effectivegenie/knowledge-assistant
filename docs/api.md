@@ -225,7 +225,7 @@ Both URLs expire in 5 minutes. Upload workflow:
    { "metadataAttributes": { "tenantId": "acme", "groups": ["financial", "IT"], "category": "general" } }
    ```
 
-`tenantId` in metadata enables KB-level tenant isolation. The metadata file enables Bedrock KB group filtering. After a successful upload, the S3 event automatically triggers a Bedrock ingestion job. If `category` is `invoice`, a second S3 trigger runs the document-processor Lambda for invoice data extraction.
+`tenantId` in metadata enables KB-level tenant isolation. The metadata file enables Bedrock KB group filtering. After a successful upload, the S3 event automatically triggers a Bedrock ingestion job. If `category` is `invoice`, a second S3 trigger runs the invoice-processor Lambda for invoice data extraction.
 
 ---
 

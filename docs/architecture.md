@@ -30,9 +30,8 @@ graph LR
     S3D -->|OBJECT_CREATED| SNS[SNS Topic]
     S3D -->|OBJECT_REMOVED| LS
     SNS --> LS[Lambda\nsync]
-    SNS --> LDP[Lambda\ndocument-processor]
+    SNS --> LDP[Lambda\ninvoice-processor]
     LS --> Bedrock
-    LDP --> Textract[Amazon Textract]
     LDP --> Claude
     LDP --> DDB3
 ```
@@ -50,7 +49,6 @@ graph LR
 | **S3 Vectors** | Vector store for Bedrock embeddings |
 | **DynamoDB** | Chat history, connections, tenant registry, invoices |
 | **S3 (docs bucket)** | Tenant document storage (source for Bedrock + invoice processor) |
-| **Amazon Textract** | Invoice data extraction (`AnalyzeExpense`) |
 
 ## Data Flow — Chat Message
 
@@ -123,11 +121,11 @@ sequenceDiagram
 | `admin` | HTTP API | Tenant CRUD, full delete cleanup |
 | `tenant-admin` | HTTP API | User CRUD, presigned upload URLs (category: general\|invoice) |
 | `invoices` | HTTP API | Invoice CRUD, stats, presigned view URL, tenant profile |
-| `document-processor` | S3 `OBJECT_CREATED` | Textract extraction + Claude Haiku normalization → InvoicesTable |
+| `invoice-processor` | S3 `OBJECT_CREATED` | Claude Vision extraction → InvoicesTable (category=invoice only) |
 | `sync` | S3 `OBJECT_CREATED` | Start Bedrock ingestion job |
 | `pre-token-gen` | Cognito trigger | Inject `custom:tenantId` into ID token |
 
-Both `document-processor` and `sync` receive `OBJECT_CREATED` events via a shared **SNS topic** (S3 → SNS → Lambda subscriptions). This avoids the S3 constraint that prohibits two Lambda notifications for the same event type without non-overlapping prefix/suffix filters. `OBJECT_REMOVED` goes directly to `sync` only. Failures in either Lambda do not affect the other.
+Both `invoice-processor` and `sync` receive `OBJECT_CREATED` events via a shared **SNS topic** (S3 → SNS → Lambda subscriptions). This avoids the S3 constraint that prohibits two Lambda notifications for the same event type without non-overlapping prefix/suffix filters. `OBJECT_REMOVED` goes directly to `sync` only. Failures in either Lambda do not affect the other.
 
 ## Infrastructure as Code
 
@@ -179,9 +177,8 @@ sequenceDiagram
     participant S3 as S3 Docs Bucket
     participant SNS as SNS Topic
     participant Sync as Lambda sync
-    participant DP as Lambda document-processor
-    participant Textract as Amazon Textract
-    participant Claude as Claude Haiku
+    participant IP as Lambda invoice-processor
+    participant Claude as Claude Haiku Vision
     participant DDB as DynamoDB
 
     Admin->>Browser: upload invoice.pdf (category=invoice)
@@ -193,20 +190,19 @@ sequenceDiagram
 
     S3--)SNS: OBJECT_CREATED (metadata.json)
     SNS--)Sync: invoke → StartIngestionJob
-    SNS--)DP: invoke → skip (.metadata.json)
+    SNS--)IP: invoke → skip (.metadata.json)
 
     S3--)SNS: OBJECT_CREATED (invoice.pdf)
     SNS--)Sync: invoke → StartIngestionJob (RAG indexing)
-    SNS--)DP: invoke
+    SNS--)IP: invoke
 
-    DP->>S3: read invoice.pdf.metadata.json
-    DP->>DDB: read tenant profile (legalName, vatNumber, aliases)
-    DP->>Textract: AnalyzeExpense(invoice.pdf)
-    Textract-->>DP: SummaryFields + confidence
-    DP->>Claude: normalize fields to structured JSON
-    Claude-->>DP: {invoiceNumber, issueDate, amountTotal, direction, confidence}
-    DP->>DDB: QueryCommand (dedupIndex) — check duplicate
-    DP->>DDB: PutItemCommand → InvoicesTable (status: extracted | review_needed)
+    IP->>S3: read invoice.pdf.metadata.json (check category=invoice)
+    IP->>DDB: read tenant profile (legalName, vatNumber, aliases)
+    IP->>S3: read invoice.pdf bytes
+    IP->>Claude: Vision — PDF/image as base64 + extraction prompt
+    Claude-->>IP: {invoiceNumber, issueDate, amountTotal, direction, confidence}
+    IP->>DDB: QueryCommand (dedupIndex) — check duplicate
+    IP->>DDB: PutItemCommand → InvoicesTable (status: extracted | review_needed)
 ```
 
 ## Admin API — OpenAPI Integration

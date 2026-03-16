@@ -177,7 +177,7 @@ Invoice Intelligence UI (TenantAdmin only). Four tabs:
 **Company Profile tab**
 - Form for tenant legal identity: `legalName`, `vatNumber`, `bulstat`, `aliases` (comma-separated)
 - Saved to TenantsTable via `PUT /tenants/{id}/profile`
-- Used by the document-processor Lambda to determine invoice direction (incoming/outgoing)
+- Used by the invoice-processor Lambda to determine invoice direction (incoming/outgoing)
 
 ## Components
 
