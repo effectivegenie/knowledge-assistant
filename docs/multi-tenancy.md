@@ -87,16 +87,19 @@ Each tenant has its own S3DataSource with `inclusionPrefixes`. Bedrock only inde
 
 ### Level 2 — Retrieval Filter
 
-At query time, the chat Lambda applies a `startsWith` filter on the `x-amz-bedrock-kb-source-uri` metadata attribute:
+At query time, the chat Lambda applies an `equals` filter on the `tenantId` metadata attribute (S3 Vectors supports `equals` but not `startsWith`):
 
 ```js
-filter: { startsWith: { key: 'x-amz-bedrock-kb-source-uri', value: `s3://${bucket}/{tenantId}/` } }
+filter: { equals: { key: 'tenantId', value: tenantId } }
 ```
 
-**Fallback**: If the filter throws (S3 Vectors backend limitation) or returns 0 results, the Lambda retries without the filter and applies the prefix check in code:
+**Fallback**: If the filter throws or returns 0 results (e.g., legacy documents without `tenantId` metadata), the Lambda retries unfiltered and post-filters in code:
 
 ```js
-all.filter(r => r.location?.s3Location?.uri?.startsWith(sourcePrefix))
+results.filter(r =>
+  r.location?.s3Location?.uri?.startsWith(sourcePrefix) ||
+  r.metadata?.tenantId === tenantId
+)
 ```
 
 This double-layer approach ensures cross-tenant data leakage cannot occur even if one mechanism fails.

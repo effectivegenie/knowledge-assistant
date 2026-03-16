@@ -75,7 +75,7 @@ describe('admin handler — POST /tenants business groups assignment', () => {
     process.env.TENANTS_TABLE = 'TenantsTable';
   });
 
-  it('assigns all 9 business groups to the tenant admin on creation', async () => {
+  it('assigns all 11 business groups to the tenant admin on creation', async () => {
     const { handler } = await import('../index.mjs');
     const event = makeEvent({
       method: 'POST',

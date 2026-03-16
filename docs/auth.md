@@ -17,7 +17,7 @@ All users are stored in a single Cognito User Pool. Self sign-up is disabled —
 | Group | Purpose |
 |---|---|
 | `RootAdmin` | Full access — can create/delete tenants, manage any tenant's users |
-| `TenantAdmin` | Can manage users within their own tenant only; automatically assigned all 9 business groups |
+| `TenantAdmin` | Can manage users within their own tenant only; automatically assigned all 11 business groups |
 
 #### Business Groups
 
@@ -34,6 +34,8 @@ Users can belong to one or more of the following business domain groups. These c
 | `security` | Security department |
 | `logistics` | Logistics department |
 | `sales` | Sales department |
+| `design` | Design department |
+| `HR` | Human Resources department |
 
 RootAdmin and TenantAdmin bypass all group-based document filters — they can access all documents regardless of group tagging.
 
@@ -81,6 +83,7 @@ Claims are forwarded to Lambda via `event.requestContext.authorizer.jwt.claims`.
 | `GET /tenants/{id}/users` | ✅ | ✅ (own tenant) | ❌ |
 | `POST /tenants/{id}/users` | ✅ | ✅ (own tenant) | ❌ |
 | `DELETE /tenants/{id}/users/{u}` | ✅ | ✅ (own tenant) | ❌ |
+| `PUT /tenants/{id}/users/{u}` | ✅ | ✅ (own tenant) | ❌ |
 | `POST /tenants/{id}/upload-url` | ✅ | ✅ (own tenant) | ❌ |
 
 ### Group Parsing

@@ -48,33 +48,32 @@ When uploading a document `tenantId/file.pdf`, a companion metadata file `tenant
 ```json
 {
   "metadataAttributes": {
+    "tenantId": "acme",
     "groups": ["financial", "IT"]
   }
 }
 ```
 
-Bedrock indexes these attributes alongside the document vectors. The `listContains` filter operator checks if the `groups` array contains a specific group name.
+Bedrock indexes these attributes alongside the document vectors. `tenantId` is used for the primary KB-level retrieval filter. `groups` is post-filtered in the chat Lambda (S3 Vectors does not support `listContains`).
 
-Documents without a metadata file (or with no `groups` attribute) are treated as accessible to all users (backward compatible with existing untagged documents).
+Documents without a metadata file (or with no `groups` attribute) are treated as accessible to all users (backward compatible with existing untagged documents). Documents without `tenantId` in metadata fall back to URI-based isolation.
 
 ## Retrieval Pipeline
 
 ```mermaid
 flowchart TD
     Q[User question] --> CC[Fetch connection record\nfrom DynamoDB]
-    CC --> A{tenant has\ndocsPrefix?}
-    A -- yes --> GC{user is\nadmin?}
-    GC -- yes --> F[RetrieveCommand\nstartsWith filter only\ntop-5 results]
-    GC -- no, has groups --> GF[RetrieveCommand\nstartsWith + group filter\ntop-5 results]
-    GF --> GR{results > 0?}
-    GR -- yes --> CTX[Build context]
-    GR -- no / untagged --> F
-    A -- no --> U[RetrieveCommand\nno filter\ntop-10 results]
+    CC --> A{tenant has\nknowledgeBaseId?}
+    A -- yes --> F[RetrieveCommand\nequals tenantId filter\ntop-20 results]
     F --> R{results > 0?}
-    R -- yes --> CTX
-    R -- no / error --> U
-    U --> PF[Post-filter by\nS3 URI prefix in code]
-    PF --> CTX
+    R -- yes --> GC{user is\nadmin?}
+    R -- no / error --> U[RetrieveCommand\nno filter\ntop-30 results]
+    U --> PF[Post-filter by\nS3 URI prefix or tenantId\nin Lambda]
+    PF --> GC
+    GC -- yes --> CTX[Build context\ntop-5 results]
+    GC -- no, has groups --> GF[Post-filter in Lambda:\ngroups ∩ allowedGroups]
+    GF --> CTX
+    A -- no --> NKB[No RAG context\ngeneric assistant]
     CTX --> P[Assemble system prompt\nwith context + history]
     P --> C[Claude Haiku\nstreaming response]
     C --> CIT[Send citations event\nwith source URIs + scores]
@@ -97,40 +96,49 @@ const tenantId = connItem.Item?.tenantId?.S;
 const userGroups = (connItem.Item?.groups?.L || []).map(g => g.S);
 ```
 
-### Step 1: Filter-Based Retrieval
+### Step 1: Primary KB Filter (equals tenantId)
 
-Applies a `startsWith` filter for tenant isolation. For non-admin users with business groups, also applies a `listContains` group filter:
-
-```js
-// Admin user — tenant isolation only
-filter: { startsWith: { key: 'x-amz-bedrock-kb-source-uri', value: sourcePrefix } }
-
-// Business user with groups — tenant isolation + group access
-filter: {
-  andAll: [
-    { startsWith: { key: 'x-amz-bedrock-kb-source-uri', value: sourcePrefix } },
-    { orAll: businessGroups.map(g => ({ listContains: { key: 'groups', value: g } })) }
-  ]
-}
-```
-
-Retrieves top-5 results.
-
-### Step 1a: Group-Filter Fallback
-
-If the group-filtered query returns 0 results (e.g., all documents are untagged legacy docs), the Lambda retries with tenant isolation only — ensuring backward compatibility with pre-existing untagged documents.
-
-### Step 2: Fallback (Unfiltered + Post-Filter)
-
-If the filter throws (S3 Vectors backend may not support all filter types) or returns 0 results, the Lambda retries without the filter, fetching top-10, then applies the prefix check in code:
+Applies an `equals` filter on the `tenantId` metadata attribute. This is the efficient path for documents that have `tenantId` in their `.metadata.json`:
 
 ```js
-all.filter(r => r.location?.s3Location?.uri?.startsWith(sourcePrefix))
+filter: { equals: { key: 'tenantId', value: tenantId } }
 ```
 
-This guarantees cross-tenant isolation even when the server-side filter is unavailable.
+Retrieves top-20 results. S3 Vectors supports `equals`, `notEquals`, `in`, `notIn` — `startsWith` and `listContains` are not supported and must be handled in Lambda.
 
-### Step 3: Prompt Assembly
+### Step 2: Fallback (Unfiltered + URI Post-Filter)
+
+If the KB filter returns 0 results (filter error, or legacy documents without `tenantId` metadata), the Lambda retries without a filter, fetching top-30, then post-filters in code:
+
+```js
+results.filter(r =>
+  r.location?.s3Location?.uri?.startsWith(sourcePrefix) ||
+  r.metadata?.tenantId === tenantId
+)
+```
+
+This handles backward compatibility with documents uploaded before `tenantId` metadata was introduced.
+
+### Step 3: Group Access Control (Lambda Post-Filter)
+
+For non-admin users with assigned business groups, the Lambda post-filters the tenant-isolated results:
+
+```js
+const allowedGroups = new Set([...businessGroups, 'general']);
+results = results.filter(r => {
+  const raw = r.metadata?.groups;
+  if (raw == null) return true; // no groups metadata → accessible to all
+  // parse groups (S3 Vectors returns array metadata as JSON string)
+  const list = parseGroups(raw);
+  return list.some(g => allowedGroups.has(g));
+});
+```
+
+Documents tagged with `general` are accessible to all users regardless of group membership. Documents with no `groups` metadata are also accessible to all (legacy backward compatibility).
+
+The final result is sliced to top-5 for context injection.
+
+### Step 4: Prompt Assembly
 
 Retrieved chunks are joined and injected into the system message:
 

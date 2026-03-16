@@ -12,10 +12,20 @@ All endpoints require `Authorization: Bearer <idToken>` header.
 
 List all tenants. **RootAdmin only.**
 
+**Query parameters**
+
+| Parameter | Default | Description |
+|---|---|---|
+| `page` | `0` | Zero-based page index |
+| `pageSize` | `20` | Items per page |
+| `sortBy` | `name` | Field to sort by |
+| `sortOrder` | `asc` | `asc` or `desc` |
+| `search` | — | Optional. Filters by `tenantId` or `name` (case-insensitive) |
+
 **Response 200**
 ```json
 {
-  "tenants": [
+  "items": [
     {
       "tenantId": "acme",
       "name": "Acme Corp",
@@ -24,7 +34,10 @@ List all tenants. **RootAdmin only.**
       "dataSourceId": "DS456",
       "docsPrefix": "acme/"
     }
-  ]
+  ],
+  "total": 1,
+  "page": 0,
+  "pageSize": 20
 }
 ```
 
@@ -89,17 +102,30 @@ Delete tenant and all associated resources (S3, Bedrock data source, chat histor
 
 List users belonging to a tenant. **RootAdmin** or **TenantAdmin of that tenant**.
 
+**Query parameters**
+
+| Parameter | Default | Description |
+|---|---|---|
+| `page` | `0` | Zero-based page index |
+| `pageSize` | `20` | Items per page |
+| `sortBy` | `email` | Field to sort by |
+| `sortOrder` | `asc` | `asc` or `desc` |
+| `search` | — | Optional. Filters by `email` or `status` (case-insensitive) |
+
 **Response 200**
 ```json
 {
-  "users": [
+  "items": [
     {
       "username": "admin@acme.com",
       "email": "admin@acme.com",
       "status": "CONFIRMED",
       "createdAt": "2024-01-15T10:00:00.000Z"
     }
-  ]
+  ],
+  "total": 1,
+  "page": 0,
+  "pageSize": 20
 }
 ```
 
@@ -120,7 +146,7 @@ Create a new user in the tenant. **RootAdmin** or **TenantAdmin of that tenant**
 }
 ```
 
-`businessGroups` is optional. Valid values: `financial`, `accounting`, `operations`, `marketing`, `IT`, `warehouse`, `security`, `logistics`, `sales`. Returns 400 for unknown group names.
+`businessGroups` is optional. Valid values: `financial`, `accounting`, `operations`, `marketing`, `IT`, `warehouse`, `security`, `logistics`, `sales`, `design`, `HR`. Returns 400 for unknown group names.
 
 The user is created with `MessageAction: SUPPRESS` (no welcome email). The user must change their password on first login.
 
@@ -142,6 +168,24 @@ Permanently delete a Cognito user. **RootAdmin** or **TenantAdmin of that tenant
 
 ---
 
+### `PUT /tenants/{tenantId}/users/{username}`
+
+Update business group assignments for a user. **RootAdmin** or **TenantAdmin of that tenant**.
+
+**Request body**
+```json
+{
+  "businessGroups": ["financial", "IT"]
+}
+```
+
+**Response 200**
+```json
+{ "username": "user@acme.com", "businessGroups": ["financial", "IT"] }
+```
+
+---
+
 ## Document Upload
 
 ### `POST /tenants/{tenantId}/upload-url`
@@ -156,7 +200,7 @@ Generate presigned S3 PUT URLs for direct browser-to-S3 upload (document + metad
 }
 ```
 
-`groups` is optional. When provided, documents are tagged with access groups — only users in those groups will see them in RAG results. Valid group names: `financial`, `accounting`, `operations`, `marketing`, `IT`, `warehouse`, `security`, `logistics`, `sales`.
+`groups` is optional. When provided, documents are tagged with access groups — only users in those groups will see them in RAG results. Valid group names: `financial`, `accounting`, `operations`, `marketing`, `IT`, `warehouse`, `security`, `logistics`, `sales`, `design`, `HR`. Use `general` for documents accessible to all users regardless of group membership.
 
 Filenames are sanitised: characters outside `[a-zA-Z0-9._\-\s]` are replaced with `_`.
 
@@ -174,10 +218,10 @@ Both URLs expire in 5 minutes. Upload workflow:
 1. `PUT <url>` with document bytes (Content-Type: application/pdf or appropriate MIME type)
 2. `PUT <metadataUrl>` with JSON body (Content-Type: application/json):
    ```json
-   { "metadataAttributes": { "groups": ["financial", "IT"] } }
+   { "metadataAttributes": { "tenantId": "acme", "groups": ["financial", "IT"] } }
    ```
 
-The metadata file enables Bedrock KB group filtering. After a successful upload, the S3 event automatically triggers a Bedrock ingestion job.
+`tenantId` in metadata enables KB-level tenant isolation. The metadata file enables Bedrock KB group filtering. After a successful upload, the S3 event automatically triggers a Bedrock ingestion job.
 
 ---
 
