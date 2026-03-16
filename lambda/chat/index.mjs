@@ -125,48 +125,48 @@ export const handler = async (event) => {
     if (knowledgeBaseId) {
       log.debug('RAG retrieval starting', { tenantId, knowledgeBaseId, isAdmin, businessGroups });
       try {
-        // S3 Vectors only supports: equals, notEquals, greaterThan/LessThan, in, notIn.
-        // startsWith and listContains are OpenSearch Serverless only — do NOT use them.
+        // S3 Vectors only supports equals/notEquals/in/notIn KB-level filters.
+        // startsWith and listContains (OpenSearch Serverless only) must NOT be used.
         //
-        // Tenant isolation: use equals filter on the custom 'tenantId' metadata attribute
-        // (stored in .metadata.json alongside each document).
-        //
-        // Group access control: post-filter in Lambda by inspecting result metadata.groups.
-        // This avoids needing unsupported listContains and correctly handles multi-value groups.
-
-        // Retrieve more candidates when we'll post-filter by groups
-        const needsGroupFilter = !isAdmin && businessGroups.length > 0;
-        const numberOfResults = needsGroupFilter ? 20 : 5;
-
-        const filter = { equals: { key: 'tenantId', value: tenantId } };
-
+        // Strategy: retrieve a larger candidate set without any KB filter, then
+        // apply tenant isolation and group access control in Lambda (plain JS).
+        // This works for all documents regardless of metadata format.
         const resp = await bedrockAgentClient.send(new RetrieveCommand({
           knowledgeBaseId,
           retrievalQuery: { text: prompt },
           retrievalConfiguration: {
-            vectorSearchConfiguration: { numberOfResults, filter },
+            vectorSearchConfiguration: { numberOfResults: 30 },
           },
         }));
 
         let results = resp.retrievalResults || [];
-        log.debug('RAG raw results', { tenantId, count: results.length, needsGroupFilter });
+        log.debug('RAG raw results before filtering', { tenantId, count: results.length });
 
-        if (needsGroupFilter) {
-          // Post-filter: keep docs whose groups overlap with the user's groups or 'general'
-          const allowedGroups = new Set([...businessGroups, 'general']);
-          const filtered = results.filter(r => {
-            const docGroups = r.metadata?.groups;
-            if (!docGroups) return false; // no metadata → not accessible to group-restricted users
-            const docGroupList = Array.isArray(docGroups) ? docGroups : [String(docGroups).split(',')];
-            return docGroupList.some(g => allowedGroups.has(String(g).trim()));
-          });
-          log.info('RAG post-group-filter', { tenantId, before: results.length, after: filtered.length, businessGroups });
-          results = filtered.slice(0, 5);
-        } else {
-          results = results.slice(0, 5);
+        // 1. Tenant isolation — match by source URI prefix (old docs) or tenantId metadata (new docs)
+        const sourcePrefix = docsPrefix && DOCS_BUCKET_NAME
+          ? `s3://${DOCS_BUCKET_NAME}/${docsPrefix}`
+          : null;
+        if (sourcePrefix) {
+          results = results.filter(r =>
+            r.location?.s3Location?.uri?.startsWith(sourcePrefix) ||
+            r.metadata?.tenantId === tenantId
+          );
+          log.debug('After tenant filter', { tenantId, count: results.length, sourcePrefix });
         }
 
-        retrievalResults = results;
+        // 2. Group access control — post-filter for non-admin users with assigned groups
+        if (!isAdmin && businessGroups.length > 0) {
+          const allowedGroups = new Set([...businessGroups, 'general']);
+          results = results.filter(r => {
+            const docGroups = r.metadata?.groups;
+            if (!docGroups) return true; // no groups metadata → accessible to all (legacy docs)
+            const list = Array.isArray(docGroups) ? docGroups : [String(docGroups)];
+            return list.some(g => allowedGroups.has(String(g).trim()));
+          });
+          log.info('RAG post-group-filter', { tenantId, after: results.length, businessGroups });
+        }
+
+        retrievalResults = results.slice(0, 5);
         log.info('RAG retrieval complete', { tenantId, resultCount: retrievalResults.length });
         context = retrievalResults.map(r => r.content.text).join('\n\n---\n\n');
       } catch (err) {
