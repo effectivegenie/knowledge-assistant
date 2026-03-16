@@ -251,38 +251,38 @@ export default function AdminPage() {
 
   const userColumns = [
     {
-      title: 'Email',
+      title: 'Имейл',
       dataIndex: 'email',
       key: 'email',
       sorter: true,
       render: (email: string) => <Text strong>{email}</Text>,
     },
     {
-      title: 'Status',
+      title: 'Статус',
       dataIndex: 'status',
       key: 'status',
       sorter: true,
       render: (status: string) => <Tag color={STATUS_COLOR[status] ?? 'default'}>{status ?? '—'}</Tag>,
     },
     {
-      title: 'Created',
+      title: 'Създаден',
       dataIndex: 'createdAt',
       key: 'createdAt',
       sorter: true,
       render: (t: string) => t ? new Date(t).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—',
     },
     {
-      title: 'Actions',
+      title: 'Действия',
       key: 'actions',
       width: 80,
       render: (_: unknown, record: TenantUser) => (
         <Popconfirm
-          title={`Delete user "${record.email || record.username}"?`}
-          description="The user will be permanently removed from Cognito."
+          title={`Изтрий потребител "${record.email || record.username}"?`}
+          description="Потребителят ще бъде премахнат окончателно от Cognito."
           onConfirm={() => handleDeleteUser(record.username)}
-          okText="Delete"
+          okText="Изтрий"
           okButtonProps={{ danger: true }}
-          cancelText="Cancel"
+          cancelText="Отказ"
         >
           <Button type="text" icon={<DeleteOutlined />} danger />
         </Popconfirm>
@@ -292,28 +292,28 @@ export default function AdminPage() {
 
   const tenantColumns = [
     {
-      title: 'Tenant ID',
+      title: 'ID',
       dataIndex: 'tenantId',
       key: 'tenantId',
       sorter: true,
       render: (id: string) => <Tag color="blue">{id}</Tag>,
     },
     {
-      title: 'Name',
+      title: 'Наименование',
       dataIndex: 'name',
       key: 'name',
       sorter: true,
       render: (name: string) => <Text strong>{name}</Text>,
     },
     {
-      title: 'Created',
+      title: 'Създаден',
       dataIndex: 'createdAt',
       key: 'createdAt',
       sorter: true,
       render: (t: string) => t ? new Date(t).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—',
     },
     {
-      title: 'Actions',
+      title: 'Действия',
       key: 'actions',
       width: 120,
       render: (_: unknown, record: Tenant) => (
@@ -323,7 +323,7 @@ export default function AdminPage() {
             icon={<UserOutlined />}
             onClick={() => openUsers(record)}
             style={{ color: '#1e3a5f' }}
-            title="Manage users"
+            title="Потребители"
           />
           <Button
             type="text"
@@ -332,12 +332,12 @@ export default function AdminPage() {
             style={{ color: '#1e3a5f' }}
           />
           <Popconfirm
-            title={`Delete tenant "${record.tenantId}"?`}
-            description="This will remove the tenant record and all its Cognito users."
+            title={`Изтрий клиент "${record.tenantId}"?`}
+            description="Ще бъдат премахнати записът и всички Cognito потребители."
             onConfirm={() => handleDelete(record.tenantId)}
-            okText="Delete"
+            okText="Изтрий"
             okButtonProps={{ danger: true }}
-            cancelText="Cancel"
+            cancelText="Отказ"
           >
             <Button type="text" icon={<DeleteOutlined />} danger />
           </Popconfirm>
@@ -376,16 +376,16 @@ export default function AdminPage() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <Space size={10}>
           <TeamOutlined style={{ fontSize: 22, color: '#1e3a5f' }} />
-          <Title level={4} style={{ margin: 0, color: '#1e3a5f' }}>Tenants</Title>
+          <Title level={4} style={{ margin: 0, color: '#1e3a5f' }}>Клиенти</Title>
         </Space>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
-          New tenant
+          Нов клиент
         </Button>
       </div>
 
       <Input
         prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />}
-        placeholder="Search by tenant ID or name…"
+        placeholder="Търси по ID или наименование…"
         value={tenantSearch}
         onChange={e => {
           const value = e.target.value;
@@ -416,7 +416,7 @@ export default function AdminPage() {
           current: tenantTableState.page + 1,
           pageSize: tenantTableState.pageSize,
           total: tenantTotal,
-          showTotal: (t) => `${t} tenant${t !== 1 ? 's' : ''}`,
+          showTotal: (t) => `${t} клиент${t !== 1 ? 'а' : ''}`,
           hideOnSinglePage: true,
           showSizeChanger: false,
         }}
@@ -426,7 +426,7 @@ export default function AdminPage() {
 
       {/* ── Create Drawer ── */}
       <Drawer
-        title={<span style={{ color: '#fff', fontWeight: 700 }}>Create tenant</span>}
+        title={<span style={{ color: '#fff', fontWeight: 700 }}>Нов клиент</span>}
         placement="right"
         open={createOpen}
         onClose={() => { setCreateOpen(false); createForm.resetFields(); }}
@@ -435,31 +435,31 @@ export default function AdminPage() {
         styles={DRAWER_HEADER}
         footer={
           <Space style={{ float: 'right' }}>
-            <Button onClick={() => { setCreateOpen(false); createForm.resetFields(); }}>Cancel</Button>
-            <Button type="primary" loading={submitting} onClick={() => createForm.submit()}>Create</Button>
+            <Button onClick={() => { setCreateOpen(false); createForm.resetFields(); }}>Отказ</Button>
+            <Button type="primary" loading={submitting} onClick={() => createForm.submit()}>Създай</Button>
           </Space>
         }
       >
         <Form form={createForm} layout="vertical" onFinish={handleCreate}>
-          <Form.Item name="tenantId" label="Tenant ID" rules={[{ required: true, message: 'Required' }]}
-            extra="Lowercase letters, numbers, hyphens only">
-            <Input placeholder="e.g. acme" />
+          <Form.Item name="tenantId" label="Идентификатор" rules={[{ required: true, message: 'Задължително' }]}
+            extra="Малки букви, цифри и тирета">
+            <Input placeholder="напр. acme" />
           </Form.Item>
-          <Form.Item name="name" label="Display name" rules={[{ required: true, message: 'Required' }]}>
-            <Input placeholder="e.g. Acme Corp" />
+          <Form.Item name="name" label="Наименование" rules={[{ required: true, message: 'Задължително' }]}>
+            <Input placeholder="напр. Акме ЕООД" />
           </Form.Item>
-          <Form.Item name="adminEmail" label="Admin email" rules={[{ required: true, type: 'email', message: 'Valid email required' }]}>
+          <Form.Item name="adminEmail" label="Имейл на администратор" rules={[{ required: true, type: 'email', message: 'Невалиден имейл' }]}>
             <Input placeholder="admin@acme.com" />
           </Form.Item>
-          <Form.Item name="temporaryPassword" label="Temporary password" rules={[{ required: true, min: 8, message: 'Min 8 characters' }]}>
-            <Input.Password placeholder="Min 8 characters" />
+          <Form.Item name="temporaryPassword" label="Временна парола" rules={[{ required: true, min: 8, message: 'Минимум 8 символа' }]}>
+            <Input.Password placeholder="Минимум 8 символа" />
           </Form.Item>
         </Form>
       </Drawer>
 
       {/* ── Edit Drawer ── */}
       <Drawer
-        title={<span style={{ color: '#fff', fontWeight: 700 }}>Edit tenant</span>}
+        title={<span style={{ color: '#fff', fontWeight: 700 }}>Редакция на клиент</span>}
         placement="right"
         open={!!editTenant}
         onClose={() => setEditTenant(null)}
@@ -468,17 +468,17 @@ export default function AdminPage() {
         styles={DRAWER_HEADER}
         footer={
           <Space style={{ float: 'right' }}>
-            <Button onClick={() => setEditTenant(null)}>Cancel</Button>
-            <Button type="primary" loading={submitting} onClick={() => editForm.submit()}>Save</Button>
+            <Button onClick={() => setEditTenant(null)}>Отказ</Button>
+            <Button type="primary" loading={submitting} onClick={() => editForm.submit()}>Запиши</Button>
           </Space>
         }
       >
         <Text type="secondary" style={{ display: 'block', marginBottom: 20 }}>
-          Tenant ID: <Tag color="blue">{editTenant?.tenantId}</Tag>
+          Идентификатор: <Tag color="blue">{editTenant?.tenantId}</Tag>
         </Text>
         <Form form={editForm} layout="vertical" onFinish={handleEdit}>
-          <Form.Item name="name" label="Display name" rules={[{ required: true, message: 'Required' }]}>
-            <Input placeholder="Display name" />
+          <Form.Item name="name" label="Наименование" rules={[{ required: true, message: 'Задължително' }]}>
+            <Input placeholder="Наименование" />
           </Form.Item>
         </Form>
       </Drawer>
@@ -488,7 +488,7 @@ export default function AdminPage() {
         title={
           <Space>
             <UserOutlined style={{ color: '#e6a800' }} />
-            <span style={{ color: '#fff', fontWeight: 700 }}>Users</span>
+            <span style={{ color: '#fff', fontWeight: 700 }}>Потребители</span>
             {usersTenant && <Tag color="blue" style={{ marginLeft: 4 }}>{usersTenant.tenantId}</Tag>}
           </Space>
         }
@@ -505,13 +505,13 @@ export default function AdminPage() {
             onClick={() => setAddUserOpen(true)}
             size="small"
           >
-            Add user
+            Добави потребител
           </Button>
         }
       >
         <Input
           prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />}
-          placeholder="Search by email or status…"
+          placeholder="Търси по имейл или статус…"
           value={userSearch}
           onChange={e => {
             const value = e.target.value;
@@ -543,7 +543,7 @@ export default function AdminPage() {
             current: userTableState.page + 1,
             pageSize: userTableState.pageSize,
             total: userTotal,
-            showTotal: (t) => `${t} user${t !== 1 ? 's' : ''}`,
+            showTotal: (t) => `${t} потребител${t !== 1 ? 'я' : ''}`,
             hideOnSinglePage: true,
             showSizeChanger: false,
           }}
@@ -553,7 +553,7 @@ export default function AdminPage() {
 
         {/* ── Add User nested Drawer ── */}
         <Drawer
-          title={<span style={{ color: '#fff', fontWeight: 700 }}>Add user</span>}
+          title={<span style={{ color: '#fff', fontWeight: 700 }}>Добави потребител</span>}
           placement="right"
           open={addUserOpen}
           onClose={() => { setAddUserOpen(false); userForm.resetFields(); }}
@@ -562,17 +562,17 @@ export default function AdminPage() {
           styles={DRAWER_HEADER}
           footer={
             <Space style={{ float: 'right' }}>
-              <Button onClick={() => { setAddUserOpen(false); userForm.resetFields(); }}>Cancel</Button>
-              <Button type="primary" loading={userSubmitting} onClick={() => userForm.submit()}>Create</Button>
+              <Button onClick={() => { setAddUserOpen(false); userForm.resetFields(); }}>Отказ</Button>
+              <Button type="primary" loading={userSubmitting} onClick={() => userForm.submit()}>Създай</Button>
             </Space>
           }
         >
           <Form form={userForm} layout="vertical" onFinish={handleCreateUser}>
-            <Form.Item name="email" label="Email" rules={[{ required: true, type: 'email', message: 'Valid email required' }]}>
+            <Form.Item name="email" label="Имейл" rules={[{ required: true, type: 'email', message: 'Невалиден имейл' }]}>
               <Input placeholder="user@example.com" />
             </Form.Item>
-            <Form.Item name="temporaryPassword" label="Temporary password" rules={[{ required: true, min: 8, message: 'Min 8 characters' }]}>
-              <Input.Password placeholder="Min 8 characters" />
+            <Form.Item name="temporaryPassword" label="Временна парола" rules={[{ required: true, min: 8, message: 'Минимум 8 символа' }]}>
+              <Input.Password placeholder="Минимум 8 символа" />
             </Form.Item>
           </Form>
         </Drawer>

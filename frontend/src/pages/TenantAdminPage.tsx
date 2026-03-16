@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { Table, Button, Form, Input, Drawer, Space, Typography, message, Tag, Popconfirm, Upload, Select } from 'antd';
-import type { UploadFile, TableProps } from 'antd';
-import { PlusOutlined, UserOutlined, DeleteOutlined, UploadOutlined, InboxOutlined, SearchOutlined, EditOutlined } from '@ant-design/icons';
+import { Table, Button, Form, Input, Drawer, Space, Typography, message, Tag, Popconfirm, Select } from 'antd';
+import type { TableProps } from 'antd';
+import { PlusOutlined, UserOutlined, DeleteOutlined, SearchOutlined, EditOutlined } from '@ant-design/icons';
 import { useAuth } from '../auth/AuthContext';
 import { adminApiUrl } from '../config';
 
@@ -23,19 +23,6 @@ const DOCUMENT_TAG_OPTIONS = [
 ];
 
 // Accepted MIME types for document upload
-const ACCEPTED_MIME = new Set([
-  'application/pdf',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'text/plain', 'text/markdown', 'text/html', 'text/csv',
-  'application/vnd.ms-excel',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/vnd.ms-powerpoint',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/tiff', 'image/bmp',
-]);
-const ACCEPTED_EXT = /\.(pdf|docx?|txt|md|html?|csv|xlsx?|pptx?|jpe?g|png|gif|webp|tiff?|bmp)$/i;
-
 interface TenantUser {
   username: string;
   email?: string;
@@ -74,19 +61,12 @@ export default function TenantAdminPage() {
   const userSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [uploadDrawerOpen, setUploadDrawerOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm();
 
   const [editUser, setEditUser] = useState<TenantUser | null>(null);
   const [editGroupsSubmitting, setEditGroupsSubmitting] = useState(false);
   const [editGroupsForm] = Form.useForm();
-
-  // Upload state
-  const [uploadFileList, setUploadFileList] = useState<UploadFile[]>([]);
-  const [uploadGroups, setUploadGroups] = useState<string[]>([]);
-  const [uploadCategory, setUploadCategory] = useState<'general' | 'invoice'>('general');
-  const [uploading, setUploading] = useState(false);
 
   const authHeaders = { Authorization: `Bearer ${idToken}` };
 
@@ -189,65 +169,6 @@ export default function TenantAdminPage() {
     }
   };
 
-  const resetUploadDrawer = () => {
-    setUploadDrawerOpen(false);
-    setUploadFileList([]);
-    setUploadGroups([]);
-    setUploadCategory('general');
-  };
-
-  const handleUpload = async () => {
-    if (uploadFileList.length === 0) return;
-    setUploading(true);
-    let successCount = 0;
-    for (const fileWrapper of uploadFileList) {
-      const f = fileWrapper as unknown as File;
-      try {
-        // If no groups selected, default to 'general' so the listContains filter matches
-      const effectiveGroups = uploadGroups.length > 0 ? uploadGroups : ['general'];
-      const res = await fetch(`${adminApiUrl}/tenants/${encodeURIComponent(tenantId)}/upload-url`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...authHeaders },
-          body: JSON.stringify({ filename: f.name, groups: effectiveGroups, category: uploadCategory }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || res.statusText);
-        const { url, metadataUrl, category } = data;
-
-        // Upload metadata BEFORE document so it's already in S3 when ingestion runs.
-        // tenantId is used for tenant isolation in the KB retrieve filter (equals operator,
-        // which works with S3 Vectors). groups is used for post-retrieval access control.
-        const metadata = JSON.stringify({ metadataAttributes: { tenantId, groups: effectiveGroups, category } });
-        await fetch(metadataUrl, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: metadata,
-        });
-
-        await new Promise<void>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.onload = () => {
-            if (xhr.status === 200 || xhr.status === 204) resolve();
-            else reject(new Error(`S3 upload failed: ${xhr.status}`));
-          };
-          xhr.onerror = () => reject(new Error('Network error'));
-          xhr.open('PUT', url);
-          xhr.setRequestHeader('Content-Type', f.type || 'application/octet-stream');
-          xhr.send(f);
-        });
-
-        successCount++;
-      } catch (e) {
-        message.error(`Failed to upload ${f.name}: ${e instanceof Error ? e.message : 'Unknown error'}`);
-      }
-    }
-    setUploading(false);
-    if (successCount > 0) {
-      message.success(`${successCount} file${successCount !== 1 ? 's' : ''} uploaded`);
-      resetUploadDrawer();
-    }
-  };
-
   const handleTableChange: TableProps<TenantUser>['onChange'] = (pagination, _, sorter) => {
     const s = Array.isArray(sorter) ? sorter[0] : sorter;
     const newState: TableState = {
@@ -262,14 +183,14 @@ export default function TenantAdminPage() {
 
   const columns = [
     {
-      title: 'Email',
+      title: 'Имейл',
       dataIndex: 'email',
       key: 'email',
       sorter: true,
       render: (email: string) => <Text strong>{email}</Text>,
     },
     {
-      title: 'Status',
+      title: 'Статус',
       dataIndex: 'status',
       key: 'status',
       sorter: true,
@@ -278,14 +199,14 @@ export default function TenantAdminPage() {
       ),
     },
     {
-      title: 'Created',
+      title: 'Създаден',
       dataIndex: 'createdAt',
       key: 'createdAt',
       sorter: true,
       render: (t: string) => t ? new Date(t).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—',
     },
     {
-      title: 'Groups',
+      title: 'Групи',
       dataIndex: 'businessGroups',
       key: 'businessGroups',
       render: (groups: string[] | undefined) => (
@@ -298,7 +219,7 @@ export default function TenantAdminPage() {
       ),
     },
     {
-      title: 'Actions',
+      title: 'Действия',
       key: 'actions',
       width: 90,
       render: (_: unknown, record: TenantUser) => (
@@ -308,15 +229,15 @@ export default function TenantAdminPage() {
             icon={<EditOutlined />}
             onClick={() => openEditUser(record)}
             style={{ color: '#1e3a5f' }}
-            title="Edit groups"
+            title="Редакция на групи"
           />
           <Popconfirm
-            title={`Delete user "${record.email || record.username}"?`}
-            description="The user will be permanently removed from Cognito."
+            title={`Изтрий потребител "${record.email || record.username}"?`}
+            description="Потребителят ще бъде премахнат окончателно от Cognito."
             onConfirm={() => handleDelete(record.username)}
-            okText="Delete"
+            okText="Изтрий"
             okButtonProps={{ danger: true }}
-            cancelText="Cancel"
+            cancelText="Отказ"
           >
             <Button type="text" icon={<DeleteOutlined />} danger />
           </Popconfirm>
@@ -331,25 +252,20 @@ export default function TenantAdminPage() {
         <Space size={10}>
           <UserOutlined style={{ fontSize: 22, color: '#1e3a5f' }} />
           <Title level={4} style={{ margin: 0, color: '#1e3a5f' }}>
-            Users
+            Потребители
             <Text type="secondary" style={{ fontSize: 14, fontWeight: 400, marginLeft: 8 }}>
               {tenantId}
             </Text>
           </Title>
         </Space>
-        <Space>
-          <Button icon={<UploadOutlined />} onClick={() => setUploadDrawerOpen(true)}>
-            Upload documents
-          </Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setDrawerOpen(true)}>
-            Add user
-          </Button>
-        </Space>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => setDrawerOpen(true)}>
+          Добави потребител
+        </Button>
       </div>
 
       <Input
         prefix={<SearchOutlined style={{ color: '#bfbfbf' }} />}
-        placeholder="Search by email or status…"
+        placeholder="Търси по имейл или статус…"
         value={userSearch}
         onChange={e => {
           const value = e.target.value;
@@ -379,7 +295,7 @@ export default function TenantAdminPage() {
           current: userTableState.page + 1,
           pageSize: userTableState.pageSize,
           total: userTotal,
-          showTotal: (t) => `${t} user${t !== 1 ? 's' : ''}`,
+          showTotal: (t) => `${t} потребител${t !== 1 ? 'я' : ''}`,
           hideOnSinglePage: true,
           showSizeChanger: false,
         }}
@@ -387,92 +303,9 @@ export default function TenantAdminPage() {
         bordered
       />
 
-      {/* ── Upload Documents Drawer ── */}
-      <Drawer
-        title={<span style={{ color: '#fff', fontWeight: 700 }}>Upload documents</span>}
-        placement="right"
-        open={uploadDrawerOpen}
-        onClose={resetUploadDrawer}
-        width={440}
-        closeIcon={<span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 16 }}>✕</span>}
-        styles={DRAWER_STYLES}
-        footer={
-          <Space style={{ float: 'right' }}>
-            <Button onClick={resetUploadDrawer} disabled={uploading}>Cancel</Button>
-            <Button
-              type="primary"
-              icon={<UploadOutlined />}
-              loading={uploading}
-              disabled={uploadFileList.length === 0}
-              onClick={handleUpload}
-            >
-              Upload{uploadFileList.length > 0 ? ` (${uploadFileList.length})` : ''}
-            </Button>
-          </Space>
-        }
-      >
-        <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
-          Files will be uploaded to the <strong>{tenantId}</strong> knowledge base and indexed automatically.
-        </Text>
-        <div style={{ marginBottom: 16 }}>
-          <Text strong style={{ display: 'block', marginBottom: 6 }}>Document category</Text>
-          <Select
-            value={uploadCategory}
-            onChange={(v) => setUploadCategory(v)}
-            style={{ width: '100%' }}
-            options={[
-              { value: 'general', label: 'General — knowledge base only' },
-              { value: 'invoice', label: 'Invoice — knowledge base + invoice processing' },
-            ]}
-          />
-          <Text type="secondary" style={{ fontSize: 12, marginTop: 4, display: 'block' }}>
-            Invoice documents are automatically processed by Textract for data extraction.
-          </Text>
-        </div>
-        <div style={{ marginBottom: 16 }}>
-          <Text strong style={{ display: 'block', marginBottom: 6 }}>Access groups</Text>
-          <Select
-            mode="multiple"
-            options={DOCUMENT_TAG_OPTIONS}
-            value={uploadGroups}
-            onChange={setUploadGroups}
-            placeholder="Select groups that can access these documents"
-            style={{ width: '100%' }}
-            allowClear
-          />
-          <Text type="secondary" style={{ fontSize: 12, marginTop: 4, display: 'block' }}>
-            Leave empty to make documents accessible to all groups.
-          </Text>
-        </div>
-        <Dragger
-          multiple
-          fileList={uploadFileList}
-          beforeUpload={(file) => {
-            const valid = ACCEPTED_MIME.has(file.type) || ACCEPTED_EXT.test(file.name);
-            if (!valid) {
-              message.error(`${file.name}: unsupported file type`);
-              return Upload.LIST_IGNORE;
-            }
-            setUploadFileList(prev => [...prev, file as unknown as UploadFile]);
-            return false;
-          }}
-          onRemove={(file) => {
-            setUploadFileList(prev => prev.filter(f => f.uid !== file.uid));
-          }}
-        >
-          <p className="ant-upload-drag-icon">
-            <InboxOutlined style={{ color: '#1e3a5f', fontSize: 48 }} />
-          </p>
-          <p className="ant-upload-text">Click or drag files to upload</p>
-          <p className="ant-upload-hint">
-            PDF, Word, Excel, PowerPoint, CSV, HTML, Markdown, plain text, images.
-          </p>
-        </Dragger>
-      </Drawer>
-
       {/* ── Edit User Groups Drawer ── */}
       <Drawer
-        title={<span style={{ color: '#fff', fontWeight: 700 }}>Edit groups</span>}
+        title={<span style={{ color: '#fff', fontWeight: 700 }}>Редакция на групи</span>}
         placement="right"
         open={!!editUser}
         onClose={() => { setEditUser(null); editGroupsForm.resetFields(); }}
@@ -481,20 +314,20 @@ export default function TenantAdminPage() {
         styles={DRAWER_STYLES}
         footer={
           <Space style={{ float: 'right' }}>
-            <Button onClick={() => { setEditUser(null); editGroupsForm.resetFields(); }}>Cancel</Button>
-            <Button type="primary" loading={editGroupsSubmitting} onClick={() => editGroupsForm.submit()}>Save</Button>
+            <Button onClick={() => { setEditUser(null); editGroupsForm.resetFields(); }}>Отказ</Button>
+            <Button type="primary" loading={editGroupsSubmitting} onClick={() => editGroupsForm.submit()}>Запиши</Button>
           </Space>
         }
       >
         <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
-          User: <strong>{editUser?.email || editUser?.username}</strong>
+          Потребител: <strong>{editUser?.email || editUser?.username}</strong>
         </Text>
         <Form form={editGroupsForm} layout="vertical" onFinish={handleUpdateGroups}>
-          <Form.Item name="businessGroups" label="Business groups">
+          <Form.Item name="businessGroups" label="Бизнес групи">
             <Select
               mode="multiple"
               options={GROUP_OPTIONS}
-              placeholder="Select business groups"
+              placeholder="Избери бизнес групи"
               allowClear
             />
           </Form.Item>
@@ -503,7 +336,7 @@ export default function TenantAdminPage() {
 
       {/* ── Add User Drawer ── */}
       <Drawer
-        title={<span style={{ color: '#fff', fontWeight: 700 }}>Add user</span>}
+        title={<span style={{ color: '#fff', fontWeight: 700 }}>Добави потребител</span>}
         placement="right"
         open={drawerOpen}
         onClose={() => { setDrawerOpen(false); form.resetFields(); }}
@@ -512,23 +345,23 @@ export default function TenantAdminPage() {
         styles={DRAWER_STYLES}
         footer={
           <Space style={{ float: 'right' }}>
-            <Button onClick={() => { setDrawerOpen(false); form.resetFields(); }}>Cancel</Button>
-            <Button type="primary" loading={submitting} onClick={() => form.submit()}>Create</Button>
+            <Button onClick={() => { setDrawerOpen(false); form.resetFields(); }}>Отказ</Button>
+            <Button type="primary" loading={submitting} onClick={() => form.submit()}>Създай</Button>
           </Space>
         }
       >
         <Form form={form} layout="vertical" onFinish={handleCreate}>
-          <Form.Item name="email" label="Email" rules={[{ required: true, type: 'email', message: 'Valid email required' }]}>
+          <Form.Item name="email" label="Имейл" rules={[{ required: true, type: 'email', message: 'Невалиден имейл' }]}>
             <Input placeholder="user@example.com" />
           </Form.Item>
-          <Form.Item name="temporaryPassword" label="Temporary password" rules={[{ required: true, min: 8, message: 'Min 8 characters' }]}>
-            <Input.Password placeholder="Min 8 characters" />
+          <Form.Item name="temporaryPassword" label="Временна парола" rules={[{ required: true, min: 8, message: 'Минимум 8 символа' }]}>
+            <Input.Password placeholder="Минимум 8 символа" />
           </Form.Item>
-          <Form.Item name="businessGroups" label="Business groups">
+          <Form.Item name="businessGroups" label="Бизнес групи">
             <Select
               mode="multiple"
               options={GROUP_OPTIONS}
-              placeholder="Select business groups (optional)"
+              placeholder="Избери бизнес групи (по избор)"
               allowClear
             />
           </Form.Item>

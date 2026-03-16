@@ -162,10 +162,11 @@ export const handler = async (event) => {
       // Fetch category for each visible object in parallel (batches of 50)
       const categories = await chunkAll(visible, obj => fetchMetadataCategory(DOCS_BUCKET_NAME, obj.Key));
 
-      // Keep only 'general' category documents
+      // Keep general category documents and files with no metadata (null = missing/failed metadata upload)
+      // Exclude explicitly categorised invoice/contract files which are managed in their own pages
       const general = visible
         .map((obj, i) => ({ obj, category: categories[i] }))
-        .filter(({ category }) => category === 'general')
+        .filter(({ category }) => category === 'general' || category === null)
         .map(({ obj }) => obj);
 
       log.debug('General documents filtered', { tenantId: tenantIdFromPath, count: general.length });
