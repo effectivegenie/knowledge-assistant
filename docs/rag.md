@@ -41,6 +41,22 @@ dataDeletionPolicy: 'RETAIN'  // Prevents vector store errors on deletion
 
 `RETAIN` is set to avoid errors when deleting a data source before the S3 Vectors permissions are fully propagated. Vectors are explicitly cleaned up by granting the KB execution role `s3vectors:DeleteVectors` permission.
 
+## Retrieval Pipeline
+
+```mermaid
+flowchart TD
+    Q[User question] --> A{tenant has\ndocsPrefix?}
+    A -- yes --> F[RetrieveCommand\nwith startsWith filter\ntop-5 results]
+    A -- no --> U[RetrieveCommand\nno filter\ntop-10 results]
+    F --> R{results > 0?}
+    R -- yes --> CTX[Build context\nfrom chunks]
+    R -- no / error --> U
+    U --> PF[Post-filter by\nS3 URI prefix in code]
+    PF --> CTX
+    CTX --> P[Assemble system prompt\nwith context + history]
+    P --> C[Claude Haiku\nstreaming response]
+```
+
 ## Retrieval
 
 The chat Lambda (`lambda/chat/index.mjs`) retrieves context before generating a response.

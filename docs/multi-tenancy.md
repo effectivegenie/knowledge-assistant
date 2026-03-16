@@ -46,6 +46,15 @@ Each tenant is an isolated workspace with:
 
 ## Tenant Lifecycle
 
+```mermaid
+stateDiagram-v2
+    [*] --> Creating: POST /tenants
+    Creating --> Active: DynamoDB + Bedrock DataSource\n+ S3 folder + Cognito admin user
+    Active --> Active: upload docs / manage users\n(StartIngestionJob on S3 events)
+    Active --> Deleting: DELETE /tenants/{id}
+    Deleting --> [*]: S3 objects removed\nBedrock DataSource deleted\nChat history purged\nCognito users removed
+```
+
 ### Creation (`POST /tenants`)
 
 1. Validate `tenantId`, `name`, `adminEmail`, `temporaryPassword`

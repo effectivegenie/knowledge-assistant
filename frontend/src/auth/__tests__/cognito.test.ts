@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
 // Mock amazon-cognito-identity-js before importing cognito.ts
 vi.mock('amazon-cognito-identity-js', () => {
@@ -8,8 +8,10 @@ vi.mock('amazon-cognito-identity-js', () => {
   };
 
   const mockUser = {
-    authenticateUser: vi.fn((_details, callbacks) => callbacks.onSuccess(mockSession)),
-    completeNewPasswordChallenge: vi.fn((_pw, _attrs, callbacks) => callbacks.onSuccess(mockSession)),
+    authenticateUser: vi.fn((_details: unknown, callbacks: { onSuccess: (s: typeof mockSession) => void }) =>
+      callbacks.onSuccess(mockSession)),
+    completeNewPasswordChallenge: vi.fn((_pw: string, _attrs: unknown, callbacks: { onSuccess: (s: typeof mockSession) => void }) =>
+      callbacks.onSuccess(mockSession)),
     getSession: vi.fn((_cb: (err: null, session: typeof mockSession) => void) => _cb(null, mockSession)),
     signOut: vi.fn(),
   };
@@ -17,7 +19,7 @@ vi.mock('amazon-cognito-identity-js', () => {
   return {
     CognitoUserPool: vi.fn(() => ({
       getCurrentUser: vi.fn(() => mockUser),
-      signUp: vi.fn((_email, _pw, _attrs, _val, cb) => cb(null, {})),
+      signUp: vi.fn((_email: string, _pw: string, _attrs: unknown, _val: unknown, cb: (e: null, r: unknown) => void) => cb(null, {})),
     })),
     CognitoUser: vi.fn(() => mockUser),
     AuthenticationDetails: vi.fn(),
@@ -25,7 +27,6 @@ vi.mock('amazon-cognito-identity-js', () => {
   };
 });
 
-// Mock config before importing cognito
 vi.mock('../../config', () => ({
   config: {
     cognito: {
@@ -38,14 +39,13 @@ vi.mock('../../config', () => ({
   },
 }));
 
-import { signIn, getIdToken, signOut, completeNewPassword } from '../cognito';
+import { signIn, getIdToken, signOut } from '../cognito';
 
 describe('cognito helpers', () => {
   describe('signIn', () => {
     it('returns a session on success', async () => {
       const result = await signIn('user@example.com', 'password');
       expect(result).not.toBe('NEW_PASSWORD_REQUIRED');
-      // result is a CognitoUserSession (mocked)
       expect(result).toBeDefined();
     });
   });
@@ -63,13 +63,10 @@ describe('cognito helpers', () => {
     });
   });
 
-  describe('completeNewPassword', () => {
-    it('resolves to a session after completing new password challenge', async () => {
-      // Set up a pending user by importing the module's internal state
-      // We test completeNewPassword via the mock directly
+  describe('completeNewPassword (via mock)', () => {
+    it('resolves to a session after completing the challenge', async () => {
       const { CognitoUser } = await import('amazon-cognito-identity-js');
-      const mockUserInstance = new (CognitoUser as any)({});
-      // completeNewPasswordChallenge mock will call onSuccess
+      const mockUserInstance = new (CognitoUser as new (opts: unknown) => { completeNewPasswordChallenge: (pw: string, attrs: unknown, cbs: { onSuccess: (s: unknown) => void; onFailure: (e: unknown) => void }) => void })({});
       const result = await new Promise((resolve, reject) => {
         mockUserInstance.completeNewPasswordChallenge('NewPass1', {}, {
           onSuccess: resolve,

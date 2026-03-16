@@ -74,8 +74,25 @@ Cognito groups can arrive in different formats depending on whether the claim ca
 
 ## Frontend Auth Flow
 
-1. User submits email + password → `signIn()` (`frontend/src/auth/cognito.ts`)
-2. If `NEW_PASSWORD_REQUIRED` → show change password form → `completeNewPassword()`
-3. On success → store session in Cognito local storage (automatic via SDK)
-4. `AuthContext` polls `getCurrentSession()` on mount and refreshes the ID token
-5. ID token is passed as `Authorization: Bearer <token>` on all HTTP API calls and as `?token=` on WebSocket connect
+```mermaid
+sequenceDiagram
+    actor User
+    participant App as React App
+    participant Cognito as Amazon Cognito
+    participant API as HTTP / WebSocket API
+
+    User->>App: enter email + password
+    App->>Cognito: signIn(email, password)
+    alt Normal login
+        Cognito-->>App: CognitoUserSession (idToken)
+    else Admin-created user
+        Cognito-->>App: NEW_PASSWORD_REQUIRED
+        App->>User: show change-password form
+        User->>App: submit new password
+        App->>Cognito: completeNewPassword(newPassword)
+        Cognito-->>App: CognitoUserSession (idToken)
+    end
+    App->>App: AuthContext stores idToken
+    App->>API: HTTP requests with Authorization: Bearer <idToken>
+    App->>API: WebSocket connect ?token=<idToken>
+```
