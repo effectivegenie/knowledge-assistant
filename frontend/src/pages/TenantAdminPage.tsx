@@ -5,7 +5,6 @@ import { PlusOutlined, UserOutlined, DeleteOutlined, SearchOutlined, EditOutline
 import { useAuth } from '../auth/AuthContext';
 import { adminApiUrl } from '../config';
 
-const { Dragger } = Upload;
 const { Title, Text } = Typography;
 
 const BUSINESS_GROUPS = [
@@ -15,14 +14,6 @@ const BUSINESS_GROUPS = [
 
 // Options for user assignment (business groups only)
 const GROUP_OPTIONS = BUSINESS_GROUPS.map(g => ({ label: g, value: g }));
-
-// Options for document tagging (business groups + general)
-const DOCUMENT_TAG_OPTIONS = [
-  { label: 'general — accessible to all users', value: 'general' },
-  ...BUSINESS_GROUPS.map(g => ({ label: g, value: g })),
-];
-
-// Accepted MIME types for document upload
 interface TenantUser {
   username: string;
   email?: string;
