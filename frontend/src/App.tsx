@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Layout, Card, Form, Input, Button, Spin, Typography, Space, Menu, Drawer, message, ConfigProvider } from 'antd';
-import { MailOutlined, LockOutlined, LogoutOutlined, TeamOutlined, UserOutlined, MessageOutlined, MenuOutlined, KeyOutlined, FileTextOutlined, FileProtectOutlined, FolderOutlined } from '@ant-design/icons';
+import { MailOutlined, LockOutlined, LogoutOutlined, TeamOutlined, UserOutlined, MessageOutlined, MenuOutlined, KeyOutlined, FileTextOutlined, FileProtectOutlined, FolderOutlined, DashboardOutlined } from '@ant-design/icons';
 import { useAuth } from './auth/AuthContext';
 import ChatWidget from './components/ChatWidget';
 import AdminPage from './pages/AdminPage';
@@ -8,6 +8,7 @@ import TenantAdminPage from './pages/TenantAdminPage';
 import InvoicesPage from './pages/InvoicesPage';
 import ContractsPage from './pages/ContractsPage';
 import DocumentsPage from './pages/DocumentsPage';
+import DashboardPage from './pages/DashboardPage';
 
 const { Header, Content } = Layout;
 const { Text } = Typography;
@@ -80,7 +81,7 @@ const APP_THEME = {
   },
 };
 
-type View = 'chat' | 'admin' | 'tenant-admin' | 'invoices' | 'contracts' | 'documents';
+type View = 'chat' | 'admin' | 'dashboard' | 'tenant-admin' | 'invoices' | 'contracts' | 'documents';
 
 function AuthPage() {
   const { signIn } = useAuth();
@@ -226,7 +227,7 @@ export default function App() {
   useEffect(() => {
     if (!isAuthenticated) { setView('chat'); return; }
     if (isRootAdmin) setView('admin');
-    else if (isTenantAdmin) setView('tenant-admin');
+    else if (isTenantAdmin) setView('dashboard');
     else setView('chat');
   }, [isAuthenticated, isRootAdmin, isTenantAdmin]);
 
@@ -246,6 +247,7 @@ export default function App() {
     : [
         { key: 'chat', icon: <MessageOutlined />, label: 'Чат' },
         ...(isTenantAdmin ? [
+          { key: 'dashboard', icon: <DashboardOutlined />, label: 'Табло' },
           { key: 'tenant-admin', icon: <UserOutlined />, label: 'Потребители' },
           { key: 'invoices', icon: <FileTextOutlined />, label: 'Фактури' },
           { key: 'contracts', icon: <FileProtectOutlined />, label: 'Договори' },
@@ -342,6 +344,7 @@ export default function App() {
         <Content style={{ flex: 1, overflow: 'hidden' }}>
           {view === 'chat' && <ChatWidget />}
           {view === 'admin' && <AdminPage />}
+          {view === 'dashboard' && <DashboardPage />}
           {view === 'tenant-admin' && <TenantAdminPage />}
           {view === 'invoices' && <InvoicesPage />}
           {view === 'contracts' && <ContractsPage />}

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Table, Button, Input, Typography, Space, Popconfirm, message, Drawer, Select, Upload } from 'antd';
+import { Table, Button, Input, Typography, Space, Popconfirm, message, Drawer, Select, Upload, Empty } from 'antd';
 import type { UploadFile } from 'antd';
 import { SearchOutlined, FolderOutlined, EyeOutlined, DeleteOutlined, UploadOutlined, InboxOutlined } from '@ant-design/icons';
 import { useAuth } from '../auth/AuthContext';
@@ -270,6 +270,18 @@ export default function DocumentsPage() {
         pagination={{ pageSize: 20, hideOnSinglePage: true, showSizeChanger: false, showTotal: tot => `${tot} документа` }}
         bordered
         size="small"
+        locale={{
+          emptyText: (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description={<span style={{ color: '#888' }}>Няма качени документи</span>}
+            >
+              <Button type="primary" icon={<UploadOutlined />} onClick={() => setUploadOpen(true)}>
+                Качи първия документ
+              </Button>
+            </Empty>
+          ),
+        }}
       />
       <Drawer
         title={<span style={{ color: '#fff', fontWeight: 700 }}>Качи документи</span>}

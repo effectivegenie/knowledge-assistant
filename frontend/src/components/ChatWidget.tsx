@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useCallback, KeyboardEvent } from 'react';
-import { Avatar, Button, Input, Typography, Collapse, Badge } from 'antd';
-import { SendOutlined, UserOutlined, DeleteOutlined, FileTextOutlined } from '@ant-design/icons';
+import { Avatar, Button, Input, Typography, Collapse, Badge, message } from 'antd';
+import { SendOutlined, UserOutlined, DeleteOutlined, FileTextOutlined, CopyOutlined } from '@ant-design/icons';
 import { useWebSocket } from '../hooks/useWebSocket';
 import type { Citation } from '../hooks/useWebSocket';
 
@@ -20,7 +20,7 @@ function CitationsPanel({ citations }: { citations: Citation[] }) {
       label: (
         <span style={{ fontSize: 12, color: '#666' }}>
           <FileTextOutlined style={{ marginRight: 6 }} />
-          Sources ({citations.length})
+          Източници ({citations.length})
         </span>
       ),
       children: (
@@ -135,10 +135,10 @@ export default function ChatWidget() {
               level={4}
               style={{ margin: 0, color: 'rgba(0, 0, 0, 0.45)' }}
             >
-              Ask me anything about the knowledge base
+              Питай ме всичко за базата знания
             </Title>
             <Text type="secondary">
-              Type your question below to get started
+              Напиши въпроса си по-долу
             </Text>
           </div>
         ) : (
@@ -189,6 +189,20 @@ export default function ChatWidget() {
                     </>
                   )}
                 </div>
+                {msg.role === 'assistant' && !msg.isStreaming && msg.content && (
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<CopyOutlined />}
+                    style={{ marginTop: 2, color: '#bfbfbf', fontSize: 12, padding: '0 4px' }}
+                    onClick={() => {
+                      navigator.clipboard.writeText(msg.content).then(
+                        () => message.success('Копирано'),
+                        () => message.error('Неуспешно копиране'),
+                      );
+                    }}
+                  />
+                )}
                 {msg.role === 'assistant' && msg.citations && msg.citations.length > 0 && (
                   <CitationsPanel citations={msg.citations} />
                 )}
@@ -224,14 +238,14 @@ export default function ChatWidget() {
           <Button
             icon={<DeleteOutlined />}
             onClick={clearMessages}
-            title="Clear chat"
+            title="Изчисти чата"
           />
         )}
         <TextArea
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Type your message..."
+          placeholder="Напиши съобщение…"
           autoSize={{ minRows: 1, maxRows: 4 }}
           style={{ flex: 1 }}
           disabled={!isConnected}

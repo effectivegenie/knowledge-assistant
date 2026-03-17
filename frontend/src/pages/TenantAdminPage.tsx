@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Table, Button, Form, Input, Drawer, Space, Typography, message, Tag, Popconfirm, Select } from 'antd';
+import { Table, Button, Form, Input, Drawer, Space, Typography, message, Tag, Popconfirm, Select, Empty } from 'antd';
 import type { TableProps } from 'antd';
 import { PlusOutlined, UserOutlined, DeleteOutlined, SearchOutlined, EditOutlined } from '@ant-design/icons';
 import { useAuth } from '../auth/AuthContext';
@@ -292,6 +292,18 @@ export default function TenantAdminPage() {
         }}
         style={{ width: '100%' }}
         bordered
+        locale={{
+          emptyText: (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description={<span style={{ color: '#888' }}>Няма добавени потребители</span>}
+            >
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => setDrawerOpen(true)}>
+                Добави първия потребител
+              </Button>
+            </Empty>
+          ),
+        }}
       />
 
       {/* ── Edit User Groups Drawer ── */}
