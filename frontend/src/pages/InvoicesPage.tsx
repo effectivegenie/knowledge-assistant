@@ -135,7 +135,7 @@ function useInvoicesApi() {
 
 // ── Invoices Tab ─────────────────────────────────────────────────────────────
 
-function InvoicesTab() {
+function InvoicesTab({ refreshKey = 0 }: { refreshKey?: number }) {
   const { idToken, base, updateStatus, getViewUrl, deleteInvoice } = useInvoicesApi();
   const [items, setItems]         = useState<Invoice[]>([]);
   const [total, setTotal]         = useState(0);
@@ -174,7 +174,7 @@ function InvoicesTab() {
     }
   }, [base, idToken, statusFilter, dirFilter, search, dates]);
 
-  useEffect(() => { fetchInvoices(0); }, [statusFilter, dirFilter, dates]);
+  useEffect(() => { fetchInvoices(0); }, [statusFilter, dirFilter, dates, refreshKey]);
 
   const openViewer = async (inv: Invoice) => {
     setViewing(inv);
@@ -412,7 +412,7 @@ function InvoicesTab() {
 
 // ── Pending Review Tab ────────────────────────────────────────────────────────
 
-function PendingReviewTab() {
+function PendingReviewTab({ refreshKey = 0 }: { refreshKey?: number }) {
   const { idToken, base, updateStatus, updateInvoiceFields, getViewUrl } = useInvoicesApi();
   const [items, setItems]           = useState<Invoice[]>([]);
   const [loading, setLoading]       = useState(false);
@@ -440,7 +440,7 @@ function PendingReviewTab() {
     }
   }, [base, idToken]);
 
-  useEffect(() => { fetchPending(); }, []);
+  useEffect(() => { fetchPending(); }, [refreshKey]);
 
   const openReview = async (inv: Invoice) => {
     setReviewing(inv);
@@ -946,10 +946,11 @@ function ProfileTab() {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-export default function InvoicesPage() {
+export default function InvoicesPage({ initialTab }: { initialTab?: string }) {
   const { tenantId, idToken } = useInvoicesApi();
-  const [activeTab, setActiveTab] = useState('invoices');
+  const [activeTab, setActiveTab] = useState(initialTab || 'invoices');
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const tabs = [
     {
@@ -960,7 +961,7 @@ export default function InvoicesPage() {
           Фактури
         </Space>
       ),
-      children: <InvoicesTab />,
+      children: <InvoicesTab refreshKey={refreshKey} />,
     },
     {
       key: 'pending',
@@ -970,7 +971,7 @@ export default function InvoicesPage() {
           За преглед
         </Space>
       ),
-      children: <PendingReviewTab />,
+      children: <PendingReviewTab refreshKey={refreshKey} />,
     },
     {
       key: 'stats',
@@ -1003,7 +1004,7 @@ export default function InvoicesPage() {
       <UploadDrawer
         open={uploadOpen}
         onClose={() => setUploadOpen(false)}
-        onSuccess={() => {}}
+        onSuccess={() => { setUploadOpen(false); setRefreshKey(k => k + 1); }}
         tenantId={tenantId}
         idToken={idToken}
         lockedCategory="invoice"

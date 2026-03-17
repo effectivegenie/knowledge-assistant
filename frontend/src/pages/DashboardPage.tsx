@@ -19,8 +19,8 @@ interface DashboardData {
   contractStats: { active: number; expiringSoon: number; expired: number; pending: number };
 }
 
-function StatCard({ title, value, color, icon, loading }: {
-  title: string; value: number; color: string; icon: ReactNode; loading: boolean;
+function StatCard({ title, value, color, icon, loading, onClick }: {
+  title: string; value: number; color: string; icon: ReactNode; loading: boolean; onClick?: () => void;
 }) {
   return (
     <div style={{
@@ -31,7 +31,10 @@ function StatCard({ title, value, color, icon, loading }: {
       borderLeft: `4px solid ${color}`,
       boxShadow: '0 1px 6px rgba(30,58,95,0.07)',
       height: '100%',
-    }}>
+      cursor: onClick ? 'pointer' : 'default',
+    }}
+    onClick={onClick}
+    >
       {loading ? (
         <Skeleton active paragraph={{ rows: 1 }} title={{ width: '60%' }} />
       ) : (
@@ -42,14 +45,14 @@ function StatCard({ title, value, color, icon, loading }: {
             </span>
           }
           value={value}
-          valueStyle={{ color, fontSize: 28, fontWeight: 700 }}
+          valueStyle={{ color, fontSize: 28, fontWeight: 700, textDecoration: onClick ? 'underline' : 'none' }}
         />
       )}
     </div>
   );
 }
 
-export default function DashboardPage() {
+export default function DashboardPage({ onNavigate }: { onNavigate?: (view: string, tab?: string) => void }) {
   const { user, idToken } = useAuth();
   const tenantId = user?.tenantId ?? 'default';
   const base = `${adminApiUrl}/tenants/${encodeURIComponent(tenantId)}`;
@@ -67,7 +70,7 @@ export default function DashboardPage() {
     Promise.all([
       fetch(`${base}/documents?pageSize=1`, { headers: h }).then(r => r.json()).catch(() => ({ total: 0 })),
       fetch(`${base}/invoices?pageSize=1`, { headers: h }).then(r => r.json()).catch(() => ({ total: 0 })),
-      fetch(`${base}/invoices?status=review_needed&pageSize=1`, { headers: h }).then(r => r.json()).catch(() => ({ total: 0 })),
+      fetch(`${base}/invoices?statuses=review_needed,extracted&pageSize=1`, { headers: h }).then(r => r.json()).catch(() => ({ total: 0 })),
       fetch(`${base}/contracts/stats`, { headers: h }).then(r => r.json()).catch(() => ({ active: 0, expiringSoon: 0, expired: 0, pending: 0 })),
     ]).then(([docs, invoices, reviewInvoices, contractStats]) => {
       setData({
@@ -126,6 +129,7 @@ export default function DashboardPage() {
                 color={BLUE}
                 icon={<FolderOutlined />}
                 loading={loading}
+                onClick={() => onNavigate?.('documents')}
               />
             </Col>
             <Col xs={24} sm={12} lg={8}>
@@ -135,6 +139,7 @@ export default function DashboardPage() {
                 color={GOLD}
                 icon={<FileTextOutlined />}
                 loading={loading}
+                onClick={() => onNavigate?.('invoices', 'invoices')}
               />
             </Col>
             <Col xs={24} sm={12} lg={8}>
@@ -144,6 +149,7 @@ export default function DashboardPage() {
                 color="#27ae60"
                 icon={<CheckCircleOutlined />}
                 loading={loading}
+                onClick={() => onNavigate?.('contracts', 'contracts')}
               />
             </Col>
           </Row>
@@ -159,6 +165,7 @@ export default function DashboardPage() {
                 color={(data?.invoicesForReview ?? 0) > 0 ? '#e85d04' : '#8c8c8c'}
                 icon={<WarningOutlined />}
                 loading={loading}
+                onClick={() => onNavigate?.('invoices', 'pending')}
               />
             </Col>
             <Col xs={24} sm={12} lg={6}>
@@ -168,6 +175,7 @@ export default function DashboardPage() {
                 color={cs.pending > 0 ? '#e85d04' : '#8c8c8c'}
                 icon={<FileProtectOutlined />}
                 loading={loading}
+                onClick={() => onNavigate?.('contracts', 'pending')}
               />
             </Col>
             <Col xs={24} sm={12} lg={6}>
@@ -177,6 +185,7 @@ export default function DashboardPage() {
                 color={cs.expiringSoon > 0 ? '#faad14' : '#8c8c8c'}
                 icon={<ClockCircleOutlined />}
                 loading={loading}
+                onClick={() => onNavigate?.('contracts', 'contracts')}
               />
             </Col>
             <Col xs={24} sm={12} lg={6}>
@@ -186,6 +195,7 @@ export default function DashboardPage() {
                 color={cs.expired > 0 ? '#c0392b' : '#8c8c8c'}
                 icon={<ClockCircleOutlined />}
                 loading={loading}
+                onClick={() => onNavigate?.('contracts', 'contracts')}
               />
             </Col>
           </Row>

@@ -134,6 +134,7 @@ describe('doc-classifier handler — auto-detect invoice', () => {
 
     mockBedrockSend.mockResolvedValueOnce(makeVisionResponse({
       category:          'invoice',
+      confidence:        0.95,
       documentType:      'invoice',
       direction:         'incoming',
       invoiceNumber:     'INV-100',
@@ -152,6 +153,7 @@ describe('doc-classifier handler — auto-detect invoice', () => {
     expect(putCall[0].input.Item.invoiceNumber).toEqual({ S: 'INV-100' });
     expect(putCall[0].input.Item.deduplicationKey).toEqual({ S: 'BG-SUP#INV-100' });
     expect(putCall[0].input.Item.invoiceId).toEqual({ S: 'test-uuid' });
+    expect(putCall[0].input.Item.confidence).toEqual({ N: '0.95' });
 
     // metadata should be updated with 'invoice' category
     const putS3Call = mockS3Send.mock.calls.find(([cmd]) => cmd.input?.Body);
@@ -195,6 +197,7 @@ describe('doc-classifier handler — auto-detect contract', () => {
 
     mockBedrockSend.mockResolvedValueOnce(makeVisionResponse({
       category:        'contract',
+      confidence:      0.88,
       documentType:    'contract',
       contractNumber:  'CTR-200',
       clientVatNumber: 'BG-CLIENT',
@@ -211,6 +214,7 @@ describe('doc-classifier handler — auto-detect contract', () => {
     expect(putCall[0].input.Item.autoDetected).toEqual({ BOOL: true });
     expect(putCall[0].input.Item.contractNumber).toEqual({ S: 'CTR-200' });
     expect(putCall[0].input.Item.deduplicationKey).toEqual({ S: 'BG-CLIENT#CTR-200' });
+    expect(putCall[0].input.Item.confidence).toEqual({ N: '0.88' });
 
     const putS3Call = mockS3Send.mock.calls.find(([cmd]) => cmd.input?.Body);
     expect(JSON.parse(putS3Call[0].input.Body).metadataAttributes.category).toBe('contract');

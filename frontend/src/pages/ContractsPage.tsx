@@ -127,7 +127,7 @@ function useContractsApi() {
 
 // ── Contracts Tab ─────────────────────────────────────────────────────────────
 
-function ContractsTab() {
+function ContractsTab({ refreshKey = 0 }: { refreshKey?: number }) {
   const { idToken, base, getViewUrl, deleteContract } = useContractsApi();
   const [items, setItems]     = useState<Contract[]>([]);
   const [total, setTotal]     = useState(0);
@@ -156,7 +156,7 @@ function ContractsTab() {
     }
   }, [base, idToken, search]);
 
-  useEffect(() => { fetchContracts(0); }, []);
+  useEffect(() => { fetchContracts(0); }, [refreshKey]);
 
   const openViewer = async (c: Contract) => {
     setViewing(c);
@@ -333,7 +333,7 @@ function ContractsTab() {
 
 // ── Pending Review Tab ────────────────────────────────────────────────────────
 
-function PendingReviewTab() {
+function PendingReviewTab({ refreshKey = 0 }: { refreshKey?: number }) {
   const { idToken, base, updateStatus, updateContractFields, getViewUrl } = useContractsApi();
   const [items, setItems]           = useState<Contract[]>([]);
   const [loading, setLoading]       = useState(false);
@@ -359,7 +359,7 @@ function PendingReviewTab() {
     }
   }, [base, idToken]);
 
-  useEffect(() => { fetchPending(); }, []);
+  useEffect(() => { fetchPending(); }, [refreshKey]);
 
   const openReview = async (c: Contract) => {
     setReviewing(c);
@@ -723,10 +723,11 @@ function StatsTab() {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-export default function ContractsPage() {
+export default function ContractsPage({ initialTab }: { initialTab?: string }) {
   const { tenantId, idToken } = useContractsApi();
-  const [activeTab, setActiveTab] = useState('contracts');
+  const [activeTab, setActiveTab] = useState(initialTab || 'contracts');
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const tabs = [
     {
@@ -737,7 +738,7 @@ export default function ContractsPage() {
           Договори
         </Space>
       ),
-      children: <ContractsTab />,
+      children: <ContractsTab refreshKey={refreshKey} />,
     },
     {
       key: 'pending',
@@ -747,7 +748,7 @@ export default function ContractsPage() {
           За преглед
         </Space>
       ),
-      children: <PendingReviewTab />,
+      children: <PendingReviewTab refreshKey={refreshKey} />,
     },
     {
       key: 'stats',
@@ -770,7 +771,7 @@ export default function ContractsPage() {
       <UploadDrawer
         open={uploadOpen}
         onClose={() => setUploadOpen(false)}
-        onSuccess={() => {}}
+        onSuccess={() => { setUploadOpen(false); setRefreshKey(k => k + 1); }}
         tenantId={tenantId}
         idToken={idToken}
         lockedCategory="contract"

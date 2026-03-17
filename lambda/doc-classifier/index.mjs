@@ -143,6 +143,7 @@ Step 2 — If "invoice", extract:
 - invoiceNumber, issueDate (YYYY-MM-DD), dueDate (YYYY-MM-DD)
 - supplierName, supplierVatNumber, clientName, clientVatNumber
 - amountNet, amountVat, amountTotal (numbers only, strip currency symbols)
+- confidence: a number 0.0–1.0 reflecting how confident you are in the extracted data
 
 Step 3 — If "contract", extract:
 - documentType: "contract", "amendment", or "annex"
@@ -151,14 +152,15 @@ Step 3 — If "contract", extract:
 - counterpartyName, counterpartyVatNumber (our company as it appears in the contract)
 - value (number only), currency ("BGN", "EUR", or "USD")
 - contractType: "services", "rental", "supply", "employment", "nda", "framework", or "other"
+- confidence: a number 0.0–1.0 reflecting how confident you are in the extracted data
 
 Return null for any field that is absent or illegible.
 
 Return ONLY valid JSON (no markdown, no explanation). Use this exact shape:
-{"category":"invoice","documentType":"invoice","direction":"incoming","invoiceNumber":null,"issueDate":null,"dueDate":null,"supplierName":null,"supplierVatNumber":null,"clientName":null,"clientVatNumber":null,"amountNet":null,"amountVat":null,"amountTotal":null}
+{"category":"invoice","confidence":0.9,"documentType":"invoice","direction":"incoming","invoiceNumber":null,"issueDate":null,"dueDate":null,"supplierName":null,"supplierVatNumber":null,"clientName":null,"clientVatNumber":null,"amountNet":null,"amountVat":null,"amountTotal":null}
 
 or for contracts:
-{"category":"contract","documentType":"contract","contractNumber":null,"signingDate":null,"startDate":null,"endDate":null,"clientName":null,"clientVatNumber":null,"counterpartyName":null,"counterpartyVatNumber":null,"value":null,"currency":null,"contractType":null}
+{"category":"contract","confidence":0.9,"documentType":"contract","contractNumber":null,"signingDate":null,"startDate":null,"endDate":null,"clientName":null,"clientVatNumber":null,"counterpartyName":null,"counterpartyVatNumber":null,"value":null,"currency":null,"contractType":null}
 
 or simply:
 {"category":"other"}`;
@@ -218,7 +220,7 @@ async function saveInvoice(tenantId, docId, key, bucket, result, extractedAt) {
     direction:    { S: result.direction    || 'incoming' },
     s3Key:        { S: key },
     s3Bucket:     { S: bucket },
-    confidence:   { N: '0' },
+    confidence:   { N: String(typeof result.confidence === 'number' ? result.confidence : 0) },
     extractedAt:  { S: extractedAt },
     autoDetected: { BOOL: true },
   };
@@ -257,7 +259,7 @@ async function saveContract(tenantId, docId, key, bucket, result, extractedAt) {
     direction:    { S: 'contract' },
     s3Key:        { S: key },
     s3Bucket:     { S: bucket },
-    confidence:   { N: '0' },
+    confidence:   { N: String(typeof result.confidence === 'number' ? result.confidence : 0) },
     extractedAt:  { S: extractedAt },
     autoDetected: { BOOL: true },
   };

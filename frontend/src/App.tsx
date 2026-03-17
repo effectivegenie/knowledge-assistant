@@ -223,6 +223,12 @@ export default function App() {
   const { isLoading, isAuthenticated, needsNewPassword, user, signOut, isRootAdmin, isTenantAdmin } = useAuth();
   const [view, setView] = useState<View>('chat');
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [navTarget, setNavTarget] = useState<{ view: View; tab?: string } | null>(null);
+
+  const handleNavigate = (targetView: string, tab?: string) => {
+    setView(targetView as View);
+    setNavTarget(tab ? { view: targetView as View, tab } : null);
+  };
 
   useEffect(() => {
     if (!isAuthenticated) { setView('chat'); return; }
@@ -344,10 +350,10 @@ export default function App() {
         <Content style={{ flex: 1, overflow: 'hidden' }}>
           {view === 'chat' && <ChatWidget />}
           {view === 'admin' && <AdminPage />}
-          {view === 'dashboard' && <DashboardPage />}
+          {view === 'dashboard' && <DashboardPage onNavigate={handleNavigate} />}
           {view === 'tenant-admin' && <TenantAdminPage />}
-          {view === 'invoices' && <InvoicesPage />}
-          {view === 'contracts' && <ContractsPage />}
+          {view === 'invoices' && <InvoicesPage initialTab={navTarget?.view === 'invoices' ? navTarget.tab : undefined} />}
+          {view === 'contracts' && <ContractsPage initialTab={navTarget?.view === 'contracts' ? navTarget.tab : undefined} />}
           {view === 'documents' && <DocumentsPage />}
         </Content>
       </Layout>
