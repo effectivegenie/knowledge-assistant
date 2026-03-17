@@ -217,6 +217,17 @@ describe('tenant-admin handler — POST /upload-url', () => {
     expect(JSON.parse(res.body).category).toBe('invoice');
   });
 
+  it('accepts contract category', async () => {
+    const { handler } = await import('../index.mjs');
+    const res = await handler(makeEvent({
+      method: 'POST',
+      path: '/tenants/acme/upload-url',
+      body: { filename: 'contract.pdf', groups: [], category: 'contract' },
+    }));
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).category).toBe('contract');
+  });
+
   it('falls back to general for unknown category', async () => {
     const { handler } = await import('../index.mjs');
     const res = await handler(makeEvent({

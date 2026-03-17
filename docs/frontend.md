@@ -124,8 +124,11 @@ Root component. Contains:
 **Views:**
 - `chat` — `ChatWidget` (all authenticated users)
 - `admin` — `AdminPage` (RootAdmin only)
+- `dashboard` — `DashboardPage` (TenantAdmin default landing page)
 - `tenant-admin` — `TenantAdminPage` (TenantAdmin only)
 - `invoices` — `InvoicesPage` (TenantAdmin only)
+- `contracts` — `ContractsPage` (TenantAdmin only)
+- `documents` — `DocumentsPage` (TenantAdmin only)
 
 ### `AdminPage.tsx`
 
@@ -137,25 +140,28 @@ Root admin interface (RootAdmin only).
 - **Users Drawer** (600px): list tenant users with Add / Delete
 - **Nested Add User Drawer**: `email`, `temporaryPassword`
 
+### `DashboardPage.tsx`
+
+TenantAdmin landing page (default view after login).
+
+- Fetches in parallel: `GET /documents?pageSize=1`, `GET /invoices?pageSize=1`, `GET /invoices?status=review_needed&pageSize=1`, `GET /contracts/stats`
+- **Summary** row: Documents total, Invoices total, Active contracts
+- **Needs Attention** row: Invoices for review, Contracts for review, Expiring contracts, Expired contracts
+- Skeleton loading (`Skeleton` component) for each card while data loads
+- Empty state when all counts are zero
+
 ### `TenantAdminPage.tsx`
 
 Tenant admin interface (TenantAdmin only).
 
 - User table for the current tenant with search, sort and pagination
+- Empty state with "Add first user" button when table is empty
 - **Edit Groups Drawer**: change `businessGroups` for an existing user
 - **Add User Drawer**: `email`, `temporaryPassword`, `businessGroups` (multi-select, optional)
-  - `businessGroups` are passed to `POST /tenants/{id}/users` and assigned in Cognito
-- **Upload Documents Drawer**: Ant Design `Dragger`
-  - **Category selector**: `general` (default, knowledge base only) or `invoice` (triggers Textract extraction pipeline)
-  - **Group selector** (multi-select): controls which business groups can access the uploaded documents
-  - Calls `POST /tenants/{id}/upload-url` with `{ filename, groups, category }` → receives `{ url, metadataUrl, key, category }`
-  - PUTs metadata JSON `{ metadataAttributes: { tenantId, groups, category } }` to `metadataUrl` **before** the document to avoid race conditions
-  - PUTs file directly to S3 with XHR
-  - Supports multiple files, drag-and-drop
 
 ### `InvoicesPage.tsx`
 
-Invoice Intelligence UI (TenantAdmin only). Four tabs:
+Invoice Intelligence UI (TenantAdmin only). Header includes **"Качи фактури"** button — opens `UploadDrawer` with `lockedCategory="invoice"`. Four tabs:
 
 **Invoices tab**
 - Table of all invoices (extracted / confirmed / paid / rejected)
@@ -179,17 +185,53 @@ Invoice Intelligence UI (TenantAdmin only). Four tabs:
 - Saved to TenantsTable via `PUT /tenants/{id}/profile`
 - Used by the invoice-processor Lambda to determine invoice direction (incoming/outgoing)
 
+### `ContractsPage.tsx`
+
+Contract Intelligence UI (TenantAdmin only). Header includes **"Качи договори"** button — opens `UploadDrawer` with `lockedCategory="contract"`. Three tabs: Договори (list), За преглед (pending review), Статистика (counts).
+
+### `DocumentsPage.tsx`
+
+General documents management (TenantAdmin only).
+
+- Table of `category=general` documents (files without category metadata are also shown)
+- **"Качи документи"** button opens `UploadDrawer` with free category selection
+- Empty state with "Upload first document" button when table is empty
+- View (presigned URL) and delete per row
+
 ## Components
+
+### `UploadDrawer.tsx`
+
+Shared upload drawer used by `InvoicesPage`, `ContractsPage`, and `DocumentsPage`.
+
+**Props:**
+```ts
+interface UploadDrawerProps {
+  open: boolean;
+  onClose: () => void;
+  onSuccess: () => void;
+  tenantId: string;
+  idToken: string | null;
+  lockedCategory?: 'general' | 'invoice' | 'contract';
+}
+```
+
+- When `lockedCategory` is set, the category selector is pre-filled and disabled
+- **Cyrillic transliteration**: filename is transliterated to Latin before sending to the API (e.g. `договор.pdf` → `dogovor.pdf`) to avoid S3 URL encoding issues
+- Upload flow: POST `/upload-url` → PUT metadata JSON → PUT file via XHR
+- Supports multiple files, drag-and-drop (`Dragger`)
+- Groups selector (multi-select): business groups + `general`
 
 ### `ChatWidget.tsx`
 
 Main chat interface.
 
-- Renders the empty state (logo + prompt) when no messages
+- Renders the empty state (logo + Bulgarian prompt) when no messages
 - Renders message bubbles: user (right, `#dce7f3` background) and assistant (left, logo avatar 60px)
 - Streaming: assistant bubble grows as `chunk` events arrive; blinking cursor shown during streaming
 - Typing indicator (3-dot bounce) shown while assistant bubble is empty and streaming
-- **Citations**: after streaming ends, a collapsible "Sources" panel appears below each assistant message that has citations. Shows filename (from S3 URI), relevance score badge, and short excerpt.
+- **Copy button**: appears below each completed assistant message; copies content to clipboard
+- **Citations**: after streaming ends, a collapsible "Източници" panel appears below each assistant message that has citations. Shows filename (from S3 URI), relevance score badge, and short excerpt.
 - Input: `TextArea` (auto-resize 1–4 rows), `Enter` to send, `Shift+Enter` for newline
 - Clear button (`DeleteOutlined`) appears once messages exist
 

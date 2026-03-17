@@ -203,9 +203,9 @@ Generate presigned S3 PUT URLs for direct browser-to-S3 upload (document + metad
 
 `groups` is optional. When provided, documents are tagged with access groups — only users in those groups will see them in RAG results. Valid group names: `financial`, `accounting`, `operations`, `marketing`, `IT`, `warehouse`, `security`, `logistics`, `sales`, `design`, `HR`. Use `general` for documents accessible to all users regardless of group membership.
 
-`category` is optional. Valid values: `general` (default) or `invoice`. When set to `invoice`, the document is processed by the Textract + LLM extraction pipeline after upload and an invoice record is saved to DynamoDB.
+`category` is optional. Valid values: `general` (default), `invoice`, or `contract`. When set to `invoice`, the invoice-processor Lambda runs and saves an InvoicesTable record. When set to `contract`, the contract-processor Lambda runs and saves a ContractsTable record. Any unknown value falls back to `general`.
 
-Filenames are sanitised: characters outside `[a-zA-Z0-9._\-\s]` are replaced with `_`.
+Filenames are sanitised server-side: characters outside `[a-zA-Z0-9._\-\s]` are replaced with `_`. The frontend additionally transliterates Cyrillic characters to Latin before sending the filename.
 
 **Response 200**
 ```json
@@ -225,7 +225,7 @@ Both URLs expire in 5 minutes. Upload workflow:
    { "metadataAttributes": { "tenantId": "acme", "groups": ["financial", "IT"], "category": "general" } }
    ```
 
-`tenantId` in metadata enables KB-level tenant isolation. The metadata file enables Bedrock KB group filtering. After a successful upload, the S3 event automatically triggers a Bedrock ingestion job. If `category` is `invoice`, a second S3 trigger runs the invoice-processor Lambda for invoice data extraction.
+`tenantId` in metadata enables KB-level tenant isolation. The metadata file enables Bedrock KB group filtering. After a successful upload, the S3 event triggers Bedrock ingestion. If `category` is `invoice` or `contract`, the respective processor Lambda also runs for data extraction.
 
 ---
 
