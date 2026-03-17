@@ -27,6 +27,23 @@ function parseBody(event) {
   try { return event.body ? JSON.parse(event.body) : {}; } catch { return {}; }
 }
 
+function cognitoErrorMessage(err) {
+  const name = err.name || err.__type || '';
+  const msg  = err.message || '';
+  if (name === 'UsernameExistsException')   return 'A user with this email already exists.';
+  if (name === 'InvalidPasswordException' || msg.includes('Password did not conform')) {
+    if (msg.includes('uppercase'))  return 'Password must contain at least one uppercase letter.';
+    if (msg.includes('lowercase'))  return 'Password must contain at least one lowercase letter.';
+    if (msg.includes('number') || msg.includes('numeric')) return 'Password must contain at least one number.';
+    if (msg.includes('symbol') || msg.includes('special')) return 'Password must contain at least one special character.';
+    if (msg.includes('long') || msg.includes('length'))    return 'Password is too short.';
+    return 'Password does not meet the complexity requirements (uppercase, lowercase, number, special character).';
+  }
+  if (name === 'InvalidParameterException') return 'Invalid input. Please check the email and password fields.';
+  if (name === 'TooManyRequestsException')  return 'Too many requests. Please wait a moment and try again.';
+  return 'Failed to create the user. Please try again.';
+}
+
 function jsonResponse(statusCode, data) {
   return {
     statusCode,
@@ -196,7 +213,7 @@ export const handler = async (event) => {
       }));
     } catch (err) {
       log.error('Failed to create tenant user', { email, tenantId: tenantIdFromPath, error: err.message });
-      return jsonResponse(400, { error: 'Failed to create user', detail: err.message });
+      return jsonResponse(400, { error: cognitoErrorMessage(err) });
     }
 
     // Assign business groups — non-fatal per group so user creation always succeeds
