@@ -91,7 +91,7 @@ export const handler = async (event) => {
     if (!DOCS_BUCKET_NAME) return jsonResponse(500, { error: 'Upload not configured' });
 
     // Validate category (default: 'general')
-    const VALID_CATEGORIES = ['general', 'invoice'];
+    const VALID_CATEGORIES = ['general', 'invoice', 'contract'];
     const category = VALID_CATEGORIES.includes(rawCategory) ? rawCategory : 'general';
 
     // Validate requested groups (business groups + 'general'); default to ['general'] if none provided

@@ -5,8 +5,9 @@ import {
 } from 'antd';
 import {
   SearchOutlined, FileProtectOutlined, EyeOutlined, CheckOutlined,
-  CloseOutlined, DeleteOutlined,
+  CloseOutlined, DeleteOutlined, UploadOutlined,
 } from '@ant-design/icons';
+import UploadDrawer from '../components/UploadDrawer';
 import dayjs from 'dayjs';
 import { useAuth } from '../auth/AuthContext';
 import { adminApiUrl } from '../config';
@@ -723,7 +724,9 @@ function StatsTab() {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function ContractsPage() {
+  const { tenantId, idToken } = useContractsApi();
   const [activeTab, setActiveTab] = useState('contracts');
+  const [uploadOpen, setUploadOpen] = useState(false);
 
   const tabs = [
     {
@@ -755,10 +758,23 @@ export default function ContractsPage() {
 
   return (
     <div style={{ padding: '24px 32px', height: '100%', overflow: 'auto' }}>
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 20, gap: 10 }}>
-        <FileProtectOutlined style={{ fontSize: 22, color: BLUE }} />
-        <Title level={4} style={{ margin: 0, color: BLUE }}>Договори</Title>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+        <Space size={10}>
+          <FileProtectOutlined style={{ fontSize: 22, color: BLUE }} />
+          <Title level={4} style={{ margin: 0, color: BLUE }}>Договори</Title>
+        </Space>
+        <Button type="primary" icon={<UploadOutlined />} onClick={() => setUploadOpen(true)}>
+          Качи договори
+        </Button>
       </div>
+      <UploadDrawer
+        open={uploadOpen}
+        onClose={() => setUploadOpen(false)}
+        onSuccess={() => {}}
+        tenantId={tenantId}
+        idToken={idToken}
+        lockedCategory="contract"
+      />
       <Tabs
         activeKey={activeTab}
         onChange={setActiveTab}

@@ -5,8 +5,9 @@ import {
 } from 'antd';
 import {
   SearchOutlined, FileTextOutlined, EyeOutlined, CheckOutlined,
-  CloseOutlined, SettingOutlined, CheckSquareOutlined, DeleteOutlined,
+  CloseOutlined, SettingOutlined, CheckSquareOutlined, DeleteOutlined, UploadOutlined,
 } from '@ant-design/icons';
+import UploadDrawer from '../components/UploadDrawer';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
@@ -947,7 +948,9 @@ function ProfileTab() {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function InvoicesPage() {
+  const { tenantId, idToken } = useInvoicesApi();
   const [activeTab, setActiveTab] = useState('invoices');
+  const [uploadOpen, setUploadOpen] = useState(false);
 
   const tabs = [
     {
@@ -989,10 +992,23 @@ export default function InvoicesPage() {
 
   return (
     <div style={{ padding: '24px 32px', height: '100%', overflow: 'auto' }}>
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 20, gap: 10 }}>
-        <FileTextOutlined style={{ fontSize: 22, color: BLUE }} />
-        <Title level={4} style={{ margin: 0, color: BLUE }}>Фактури</Title>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+        <Space size={10}>
+          <FileTextOutlined style={{ fontSize: 22, color: BLUE }} />
+          <Title level={4} style={{ margin: 0, color: BLUE }}>Фактури</Title>
+        </Space>
+        <Button type="primary" icon={<UploadOutlined />} onClick={() => setUploadOpen(true)}>
+          Качи фактури
+        </Button>
       </div>
+      <UploadDrawer
+        open={uploadOpen}
+        onClose={() => setUploadOpen(false)}
+        onSuccess={() => {}}
+        tenantId={tenantId}
+        idToken={idToken}
+        lockedCategory="invoice"
+      />
       <Tabs
         activeKey={activeTab}
         onChange={setActiveTab}
