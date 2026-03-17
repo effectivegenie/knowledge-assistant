@@ -92,9 +92,9 @@ function AuthPage() {
     setLoading(true);
     try {
       await signIn(values.email, values.password);
-      message.success('Signed in');
+      message.success('Влязохте успешно');
     } catch (err: unknown) {
-      message.error(err instanceof Error ? err.message : 'Sign in failed');
+      message.error(err instanceof Error ? err.message : 'Грешка при вход');
     } finally {
       setLoading(false);
     }

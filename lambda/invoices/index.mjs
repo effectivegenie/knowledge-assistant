@@ -334,6 +334,7 @@ export const handler = async (event) => {
     const page     = Math.max(0, parseInt(qs.page     || '0',  10));
     const pageSize = Math.min(100, Math.max(1, parseInt(qs.pageSize || '20', 10)));
     const statusFilter    = qs.status      || null;
+    const statusesFilter  = qs.statuses ? qs.statuses.split(',').map(s => s.trim()).filter(Boolean) : null;
     const directionFilter = qs.direction   || null;
     const typeFilter      = qs.documentType || null;
     const dateFrom        = qs.dateFrom    || null;
@@ -343,7 +344,8 @@ export const handler = async (event) => {
     try {
       let items = await queryAllInvoices(tenantIdFromPath, dateFrom, dateTo);
 
-      if (statusFilter)    items = items.filter(i => i.status      === statusFilter);
+      if (statusesFilter)  items = items.filter(i => statusesFilter.includes(i.status));
+      else if (statusFilter) items = items.filter(i => i.status === statusFilter);
       if (directionFilter) items = items.filter(i => i.direction   === directionFilter);
       if (typeFilter)      items = items.filter(i => i.documentType === typeFilter);
       if (search)          items = items.filter(i =>

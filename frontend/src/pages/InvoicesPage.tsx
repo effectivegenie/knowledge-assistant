@@ -155,7 +155,8 @@ function InvoicesTab() {
     setLoading(true);
     try {
       const qs = new URLSearchParams({ page: String(p), pageSize: '20' });
-      if (statusFilter) qs.set('status', statusFilter);
+      if (statusFilter) qs.set('statuses', statusFilter); // single pick from confirmed/paid
+      else              qs.set('statuses', 'confirmed,paid');
       if (dirFilter)    qs.set('direction', dirFilter);
       if (search)       qs.set('search', search);
       if (dates?.[0])   qs.set('dateFrom', dates[0].format('YYYY-MM-DD'));
@@ -305,10 +306,8 @@ function InvoicesTab() {
           onChange={v => setStatusFilter(v ?? null)}
           style={{ width: 160 }}
           options={[
-            { value: 'extracted',    label: t.status('extracted') },
-            { value: 'confirmed',    label: t.status('confirmed') },
-            { value: 'paid',         label: t.status('paid') },
-            { value: 'rejected',     label: t.status('rejected') },
+            { value: 'confirmed', label: t.status('confirmed') },
+            { value: 'paid',      label: t.status('paid') },
           ]}
         />
         <Select
@@ -429,7 +428,7 @@ function PendingReviewTab() {
   const fetchPending = useCallback(async () => {
     setLoading(true);
     try {
-      const qs = new URLSearchParams({ status: 'review_needed', pageSize: '100' });
+      const qs = new URLSearchParams({ statuses: 'review_needed,extracted', pageSize: '100' });
       const res = await fetch(`${base}/invoices?${qs}`, { headers: { Authorization: `Bearer ${idToken}` } });
       if (!res.ok) throw new Error(res.statusText);
       const data = await res.json();

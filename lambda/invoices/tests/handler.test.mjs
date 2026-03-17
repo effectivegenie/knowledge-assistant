@@ -104,6 +104,18 @@ describe('invoices handler — GET /invoices', () => {
     expect(data.items[0].invoiceId).toBe('a');
   });
 
+  it('filters by comma-separated statuses param', async () => {
+    const confirmed     = marshalInvoice({ tenantId: 'acme', invoiceId: 'a', status: 'confirmed',     documentType: 'invoice', direction: 'incoming', issueDate: '2024-01-15' });
+    const paid          = marshalInvoice({ tenantId: 'acme', invoiceId: 'b', status: 'paid',          documentType: 'invoice', direction: 'incoming', issueDate: '2024-01-15' });
+    const reviewNeeded  = marshalInvoice({ tenantId: 'acme', invoiceId: 'c', status: 'review_needed', documentType: 'invoice', direction: 'incoming', issueDate: '2024-01-15' });
+    mockDynamoSend.mockResolvedValue({ Items: [confirmed, paid, reviewNeeded] });
+    const { handler } = await import('../index.mjs');
+    const res = await handler(makeEvent({ qs: { statuses: 'confirmed,paid' } }));
+    const data = JSON.parse(res.body);
+    expect(data.items).toHaveLength(2);
+    expect(data.items.map(i => i.invoiceId).sort()).toEqual(['a', 'b']);
+  });
+
   it('filters by search on supplierName', async () => {
     const match   = marshalInvoice({ tenantId: 'acme', invoiceId: 'a', status: 'confirmed', documentType: 'invoice', direction: 'incoming', issueDate: '2024-01-15', supplierName: 'Acme Supplier' });
     const noMatch = marshalInvoice({ tenantId: 'acme', invoiceId: 'b', status: 'confirmed', documentType: 'invoice', direction: 'incoming', issueDate: '2024-01-15', supplierName: 'Other Corp' });
