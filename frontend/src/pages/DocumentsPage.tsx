@@ -144,7 +144,7 @@ export default function DocumentsPage() {
   ];
 
   return (
-    <div style={{ padding: '24px 32px', height: '100%', overflow: 'auto' }}>
+    <div style={{ padding: '16px 20px', height: '100%', overflow: 'auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
         <Space size={10}>
           <FolderOutlined style={{ fontSize: 22, color: BLUE }} />
@@ -169,6 +169,7 @@ export default function DocumentsPage() {
         dataSource={filtered}
         rowKey="key"
         columns={columns}
+        scroll={{ x: 'max-content' }}
         pagination={{ pageSize: 20, hideOnSinglePage: true, showSizeChanger: false, showTotal: tot => `${tot} документа` }}
         bordered
         size="small"

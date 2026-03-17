@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Layout, Card, Form, Input, Button, Spin, Typography, Space, Menu, Drawer, message, ConfigProvider } from 'antd';
-import { MailOutlined, LockOutlined, LogoutOutlined, TeamOutlined, UserOutlined, MessageOutlined, MenuOutlined, KeyOutlined, FileTextOutlined, FileProtectOutlined, FolderOutlined, DashboardOutlined } from '@ant-design/icons';
+import { MailOutlined, LockOutlined, LogoutOutlined, TeamOutlined, UserOutlined, MessageOutlined, MenuOutlined, KeyOutlined, FileTextOutlined, FileProtectOutlined, FolderOutlined, DashboardOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons';
 import { useAuth } from './auth/AuthContext';
 import ChatWidget from './components/ChatWidget';
 import AdminPage from './pages/AdminPage';
@@ -10,7 +10,7 @@ import ContractsPage from './pages/ContractsPage';
 import DocumentsPage from './pages/DocumentsPage';
 import DashboardPage from './pages/DashboardPage';
 
-const { Header, Content } = Layout;
+const { Header, Content, Sider } = Layout;
 const { Text } = Typography;
 
 const BLUE        = '#1e3a5f';
@@ -82,6 +82,20 @@ const APP_THEME = {
 };
 
 type View = 'chat' | 'admin' | 'dashboard' | 'tenant-admin' | 'invoices' | 'contracts' | 'documents';
+
+function useIsDesktopLandscape() {
+  const query = '(min-width: 1024px), (min-width: 768px) and (orientation: landscape)';
+  const [matches, setMatches] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia(query).matches : true
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const handler = (e: MediaQueryListEvent) => setMatches(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+  return matches;
+}
 
 function AuthPage() {
   const { signIn } = useAuth();
@@ -223,12 +237,16 @@ export default function App() {
   const { isLoading, isAuthenticated, needsNewPassword, user, signOut, isRootAdmin, isTenantAdmin } = useAuth();
   const [view, setView] = useState<View>('chat');
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [siderCollapsed, setSiderCollapsed] = useState(false);
   const [navTarget, setNavTarget] = useState<{ view: View; tab?: string } | null>(null);
+  const isDesktopLandscape = useIsDesktopLandscape();
 
-  const handleNavigate = (targetView: string, tab?: string) => {
+  const defaultView: View = isRootAdmin ? 'admin' : isTenantAdmin ? 'dashboard' : 'chat';
+
+  const handleNavigate = useCallback((targetView: string, tab?: string) => {
     setView(targetView as View);
     setNavTarget(tab ? { view: targetView as View, tab } : null);
-  };
+  }, []);
 
   useEffect(() => {
     if (!isAuthenticated) { setView('chat'); return; }
@@ -271,33 +289,37 @@ export default function App() {
       <Layout style={{ height: '100vh' }}>
         {/* ── Header ── */}
         <Header style={{
-          height: 140,
-          lineHeight: '140px',
+          height: isDesktopLandscape ? 56 : 90,
+          lineHeight: isDesktopLandscape ? '56px' : '90px',
           background: BLUE,
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '0 24px',
-          boxShadow: '0 2px 12px rgba(0,0,0,0.25)',
+          justifyContent: isDesktopLandscape ? 'flex-end' : 'space-between',
+          padding: '0 16px',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
           borderBottom: `3px solid ${GOLD}`,
           zIndex: 10,
+          flexShrink: 0,
         }}>
-          <Space size={14}>
-            <Button
-              type="text"
-              icon={<MenuOutlined style={{ fontSize: 20, color: '#fff' }} />}
-              onClick={() => setDrawerOpen(true)}
-              style={{ padding: '4px 8px', height: 40 }}
-            />
-            <img
-              src="/genie-logo-final-2-no-text.png"
-              alt="Knowledge Genie"
-              style={{ height: 128, objectFit: 'contain', display: 'block' }}
-            />
-            <span style={{ color: '#fff', fontSize: 20, fontWeight: 700, letterSpacing: '-0.01em' }}>
-              Knowledge Genie
-            </span>
-          </Space>
+          {!isDesktopLandscape && (
+            <Space size={10}>
+              <Button
+                type="text"
+                icon={<MenuOutlined style={{ fontSize: 18, color: '#fff' }} />}
+                onClick={() => setDrawerOpen(true)}
+                style={{ padding: '4px 8px', height: 36 }}
+              />
+              <img
+                src="/genie-logo-final-2-no-text.png"
+                alt="Knowledge Genie"
+                onClick={() => setView(defaultView)}
+                style={{ height: 76, objectFit: 'contain', display: 'block', cursor: 'pointer' }}
+              />
+              <span style={{ color: '#fff', fontSize: 16, fontWeight: 700, letterSpacing: '-0.01em' }}>
+                Knowledge Genie
+              </span>
+            </Space>
+          )}
           <Space size={8}>
             <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13 }}>{user?.email}</Text>
             <Button
@@ -311,7 +333,7 @@ export default function App() {
           </Space>
         </Header>
 
-        {/* ── Navigation Drawer ── */}
+        {/* ── Navigation Drawer (mobile / tablet portrait) ── */}
         <Drawer
           placement="left"
           open={drawerOpen}
@@ -346,16 +368,78 @@ export default function App() {
           />
         </Drawer>
 
-        {/* ── Content ── */}
-        <Content style={{ flex: 1, overflow: 'hidden' }}>
-          {view === 'chat' && <ChatWidget />}
-          {view === 'admin' && <AdminPage />}
-          {view === 'dashboard' && <DashboardPage onNavigate={handleNavigate} />}
-          {view === 'tenant-admin' && <TenantAdminPage />}
-          {view === 'invoices' && <InvoicesPage initialTab={navTarget?.view === 'invoices' ? navTarget.tab : undefined} />}
-          {view === 'contracts' && <ContractsPage initialTab={navTarget?.view === 'contracts' ? navTarget.tab : undefined} />}
-          {view === 'documents' && <DocumentsPage />}
-        </Content>
+        {/* ── Body: Sider (desktop) + Content ── */}
+        <Layout style={{ flex: 1, overflow: 'hidden', minHeight: 0 }}>
+          {isDesktopLandscape && isAuthenticated && (
+            <Sider
+              width={220}
+              collapsedWidth={56}
+              collapsed={siderCollapsed}
+              collapsible
+              trigger={
+                <div style={{
+                  height: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: BLUE_MUTED,
+                  borderTop: `1px solid ${BLUE_TINT}`,
+                }}>
+                  {siderCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+                </div>
+              }
+              onCollapse={setSiderCollapsed}
+              theme="light"
+              style={{
+                borderRight: `1px solid ${BLUE_TINT}`,
+                boxShadow: '1px 0 4px rgba(30,58,95,0.06)',
+                overflow: 'hidden',
+              }}
+            >
+              {/* Brand section */}
+              <div
+                onClick={() => setView(defaultView)}
+                style={{
+                  padding: siderCollapsed ? '16px 8px' : '16px 20px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  cursor: 'pointer',
+                  borderBottom: `1px solid ${BLUE_TINT}`,
+                  justifyContent: siderCollapsed ? 'center' : 'flex-start',
+                  marginBottom: 4,
+                }}
+              >
+                <img
+                  src="/genie-logo-final-2-no-text.png"
+                  alt="Knowledge Genie"
+                  style={{ height: siderCollapsed ? 36 : 192, objectFit: 'contain', flexShrink: 0, transition: 'height 0.2s' }}
+                />
+                {!siderCollapsed && (
+                  <span style={{ color: BLUE, fontSize: 15, fontWeight: 700, lineHeight: 1.3, whiteSpace: 'nowrap' }}>
+                    Knowledge<br />Genie
+                  </span>
+                )}
+              </div>
+              <Menu
+                mode="inline"
+                selectedKeys={[view]}
+                onClick={handleMenuClick}
+                items={menuItems}
+                style={{ border: 'none', paddingTop: 4, fontSize: 14 }}
+              />
+            </Sider>
+          )}
+          <Content style={{ flex: 1, overflow: 'hidden', minHeight: 0 }}>
+            {view === 'chat' && <ChatWidget />}
+            {view === 'admin' && <AdminPage />}
+            {view === 'dashboard' && <DashboardPage onNavigate={handleNavigate} />}
+            {view === 'tenant-admin' && <TenantAdminPage />}
+            {view === 'invoices' && <InvoicesPage initialTab={navTarget?.view === 'invoices' ? navTarget.tab : undefined} />}
+            {view === 'contracts' && <ContractsPage initialTab={navTarget?.view === 'contracts' ? navTarget.tab : undefined} />}
+            {view === 'documents' && <DocumentsPage />}
+          </Content>
+        </Layout>
       </Layout>
     </ConfigProvider>
   );

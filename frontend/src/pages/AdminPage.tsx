@@ -386,7 +386,7 @@ export default function AdminPage() {
   };
 
   return (
-    <div style={{ padding: '24px 32px', height: '100%', overflow: 'auto' }}>
+    <div style={{ padding: '16px 20px', height: '100%', overflow: 'auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <Space size={10}>
           <TeamOutlined style={{ fontSize: 22, color: '#1e3a5f' }} />
@@ -426,6 +426,7 @@ export default function AdminPage() {
         rowKey="tenantId"
         columns={tenantColumns}
         onChange={handleTenantTableChange}
+        scroll={{ x: 'max-content' }}
         pagination={{
           current: tenantTableState.page + 1,
           pageSize: tenantTableState.pageSize,
@@ -436,6 +437,7 @@ export default function AdminPage() {
         }}
         style={{ width: '100%' }}
         bordered
+        size="small"
       />
 
       {/* ── Create Drawer ── */}
@@ -553,6 +555,7 @@ export default function AdminPage() {
           rowKey="username"
           columns={userColumns}
           onChange={handleUserTableChange}
+          scroll={{ x: 'max-content' }}
           pagination={{
             current: userTableState.page + 1,
             pageSize: userTableState.pageSize,

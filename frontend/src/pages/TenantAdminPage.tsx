@@ -252,7 +252,7 @@ export default function TenantAdminPage() {
   ];
 
   return (
-    <div style={{ padding: '24px 32px', height: '100%', overflow: 'auto' }}>
+    <div style={{ padding: '16px 20px', height: '100%', overflow: 'auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
         <Space size={10}>
           <UserOutlined style={{ fontSize: 22, color: '#1e3a5f' }} />
@@ -296,6 +296,7 @@ export default function TenantAdminPage() {
         rowKey="username"
         columns={columns}
         onChange={handleTableChange}
+        scroll={{ x: 'max-content' }}
         pagination={{
           current: userTableState.page + 1,
           pageSize: userTableState.pageSize,
@@ -306,6 +307,7 @@ export default function TenantAdminPage() {
         }}
         style={{ width: '100%' }}
         bordered
+        size="small"
         locale={{
           emptyText: (
             <Empty

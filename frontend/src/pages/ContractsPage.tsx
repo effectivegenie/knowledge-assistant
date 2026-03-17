@@ -269,6 +269,7 @@ function ContractsTab({ refreshKey = 0 }: { refreshKey?: number }) {
         dataSource={items}
         rowKey="contractId"
         columns={columns}
+        scroll={{ x: 'max-content' }}
         pagination={{
           current: page + 1,
           pageSize: 20,
@@ -493,6 +494,7 @@ function PendingReviewTab({ refreshKey = 0 }: { refreshKey?: number }) {
         dataSource={filtered}
         rowKey="contractId"
         columns={columns}
+        scroll={{ x: 'max-content' }}
         pagination={{ pageSize: 20, hideOnSinglePage: true, showSizeChanger: false, showTotal: tot => `${tot} чакащи` }}
         bordered
         size="small"
@@ -758,7 +760,7 @@ export default function ContractsPage({ initialTab }: { initialTab?: string }) {
   ];
 
   return (
-    <div style={{ padding: '24px 32px', height: '100%', overflow: 'auto' }}>
+    <div style={{ padding: '16px 20px', height: '100%', overflow: 'auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
         <Space size={10}>
           <FileProtectOutlined style={{ fontSize: 22, color: BLUE }} />

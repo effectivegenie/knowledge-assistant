@@ -347,6 +347,7 @@ function InvoicesTab({ refreshKey = 0 }: { refreshKey?: number }) {
         rowKey="invoiceId"
         columns={columns}
         rowSelection={{ selectedRowKeys: selected, onChange: keys => setSelected(keys as string[]) }}
+        scroll={{ x: 'max-content' }}
         pagination={{
           current: page + 1,
           pageSize: 20,
@@ -604,6 +605,7 @@ function PendingReviewTab({ refreshKey = 0 }: { refreshKey?: number }) {
         rowKey="invoiceId"
         columns={columns}
         rowSelection={{ selectedRowKeys: selected, onChange: keys => setSelected(keys as string[]) }}
+        scroll={{ x: 'max-content' }}
         pagination={{ pageSize: 20, hideOnSinglePage: true, showSizeChanger: false, showTotal: tot => `${tot} чакащи` }}
         bordered
         size="small"
@@ -991,7 +993,7 @@ export default function InvoicesPage({ initialTab }: { initialTab?: string }) {
   ];
 
   return (
-    <div style={{ padding: '24px 32px', height: '100%', overflow: 'auto' }}>
+    <div style={{ padding: '16px 20px', height: '100%', overflow: 'auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
         <Space size={10}>
           <FileTextOutlined style={{ fontSize: 22, color: BLUE }} />
