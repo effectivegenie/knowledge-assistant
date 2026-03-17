@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Layout, Card, Form, Input, Button, Spin, Typography, Space, Menu, Drawer, message, ConfigProvider } from 'antd';
-import { MailOutlined, LockOutlined, LogoutOutlined, TeamOutlined, UserOutlined, MessageOutlined, MenuOutlined, KeyOutlined, FileTextOutlined, FileProtectOutlined, FolderOutlined, DashboardOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons';
+import { MailOutlined, LockOutlined, LogoutOutlined, TeamOutlined, UserOutlined, MessageOutlined, MenuOutlined, KeyOutlined, FileTextOutlined, FileProtectOutlined, FolderOutlined, DashboardOutlined } from '@ant-design/icons';
 import { useAuth } from './auth/AuthContext';
 import ChatWidget from './components/ChatWidget';
 import AdminPage from './pages/AdminPage';
@@ -290,36 +290,36 @@ export default function App() {
         {/* ── Header ── */}
         <Header style={{
           height: isDesktopLandscape ? 56 : 90,
-          lineHeight: isDesktopLandscape ? '56px' : '90px',
+          lineHeight: 'normal',
           background: BLUE,
           display: 'flex',
           alignItems: 'center',
-          justifyContent: isDesktopLandscape ? 'flex-end' : 'space-between',
+          justifyContent: 'space-between',
           padding: '0 16px',
           boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
           borderBottom: `3px solid ${GOLD}`,
           zIndex: 10,
           flexShrink: 0,
         }}>
-          {!isDesktopLandscape && (
-            <Space size={10}>
-              <Button
-                type="text"
-                icon={<MenuOutlined style={{ fontSize: 18, color: '#fff' }} />}
-                onClick={() => setDrawerOpen(true)}
-                style={{ padding: '4px 8px', height: 36 }}
-              />
+          <Space size={10}>
+            <Button
+              type="text"
+              icon={<MenuOutlined style={{ fontSize: 18, color: '#fff' }} />}
+              onClick={isDesktopLandscape
+                ? () => setSiderCollapsed(c => !c)
+                : () => setDrawerOpen(true)
+              }
+              style={{ padding: '4px 8px', height: 36 }}
+            />
+            {!isDesktopLandscape && (
               <img
                 src="/genie-logo-final-2-no-text.png"
                 alt="Knowledge Genie"
                 onClick={() => setView(defaultView)}
                 style={{ height: 76, objectFit: 'contain', display: 'block', cursor: 'pointer' }}
               />
-              <span style={{ color: '#fff', fontSize: 16, fontWeight: 700, letterSpacing: '-0.01em' }}>
-                Knowledge Genie
-              </span>
-            </Space>
-          )}
+            )}
+          </Space>
           <Space size={8}>
             <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13 }}>{user?.email}</Text>
             <Button
@@ -341,7 +341,7 @@ export default function App() {
           width={312}
           title={
             <Space size={10}>
-              <img src="/genie-logo-final-2-no-text.png" alt="" style={{ height: 54, objectFit: 'contain' }} />
+              <img src="/genie-logo-final-2-no-text.png" alt="" style={{ height: 108, objectFit: 'contain' }} />
               <span style={{ fontWeight: 700, fontSize: 16, color: '#fff' }}>Knowledge Genie</span>
             </Space>
           }
@@ -375,58 +375,41 @@ export default function App() {
               width={220}
               collapsedWidth={56}
               collapsed={siderCollapsed}
-              collapsible
-              trigger={
-                <div style={{
-                  height: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: BLUE_MUTED,
-                  borderTop: `1px solid ${BLUE_TINT}`,
-                }}>
-                  {siderCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-                </div>
-              }
-              onCollapse={setSiderCollapsed}
+              trigger={null}
               theme="light"
               style={{
                 borderRight: `1px solid ${BLUE_TINT}`,
                 boxShadow: '1px 0 4px rgba(30,58,95,0.06)',
-                overflow: 'hidden',
+                overflow: 'auto',
+                display: 'flex',
+                flexDirection: 'column',
               }}
             >
               {/* Brand section */}
               <div
                 onClick={() => setView(defaultView)}
                 style={{
-                  padding: siderCollapsed ? '16px 8px' : '16px 20px',
+                  padding: siderCollapsed ? '20px 8px' : '20px 16px',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 12,
+                  justifyContent: 'center',
                   cursor: 'pointer',
-                  borderBottom: `1px solid ${BLUE_TINT}`,
-                  justifyContent: siderCollapsed ? 'center' : 'flex-start',
-                  marginBottom: 4,
+                  background: '#dce8f5',
+                  borderBottom: `1px solid #c5d9ee`,
                 }}
               >
                 <img
                   src="/genie-logo-final-2-no-text.png"
                   alt="Knowledge Genie"
-                  style={{ height: siderCollapsed ? 36 : 192, objectFit: 'contain', flexShrink: 0, transition: 'height 0.2s' }}
+                  style={{ height: siderCollapsed ? 36 : 192, objectFit: 'contain', transition: 'height 0.2s' }}
                 />
-                {!siderCollapsed && (
-                  <span style={{ color: BLUE, fontSize: 15, fontWeight: 700, lineHeight: 1.3, whiteSpace: 'nowrap' }}>
-                    Knowledge<br />Genie
-                  </span>
-                )}
               </div>
               <Menu
                 mode="inline"
                 selectedKeys={[view]}
                 onClick={handleMenuClick}
                 items={menuItems}
-                style={{ border: 'none', paddingTop: 4, fontSize: 14 }}
+                style={{ border: 'none', paddingTop: 4, fontSize: 14, flex: 1 }}
               />
             </Sider>
           )}
