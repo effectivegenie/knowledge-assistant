@@ -126,21 +126,21 @@ function AuthPage() {
               Knowledge Genie
             </Typography.Title>
             <Text style={{ color: GOLD_DARK, fontSize: 15, fontWeight: 500, marginTop: 6, display: 'block' }}>
-              Sign in
+              Вход
             </Text>
           </div>
           <Form form={form} onFinish={handleSignIn} layout="vertical">
-            <Form.Item name="email" label={<span style={{ color: BLUE }}>Email</span>}
-              rules={[{ required: true, message: 'Please enter your email' }, { type: 'email', message: 'Please enter a valid email' }]}>
-              <Input prefix={<MailOutlined style={{ color: BLUE_MUTED }} />} size="large" placeholder="Email" />
+            <Form.Item name="email" label={<span style={{ color: BLUE }}>Имейл</span>}
+              rules={[{ required: true, message: 'Въведи имейл' }, { type: 'email', message: 'Невалиден имейл' }]}>
+              <Input prefix={<MailOutlined style={{ color: BLUE_MUTED }} />} size="large" placeholder="Имейл" />
             </Form.Item>
-            <Form.Item name="password" label={<span style={{ color: BLUE }}>Password</span>}
-              rules={[{ required: true, message: 'Please enter your password' }]}>
-              <Input.Password prefix={<LockOutlined style={{ color: BLUE_MUTED }} />} size="large" placeholder="Password" />
+            <Form.Item name="password" label={<span style={{ color: BLUE }}>Парола</span>}
+              rules={[{ required: true, message: 'Въведи парола' }]}>
+              <Input.Password prefix={<LockOutlined style={{ color: BLUE_MUTED }} />} size="large" placeholder="Парола" />
             </Form.Item>
             <Form.Item style={{ marginBottom: 0 }}>
               <Button type="primary" htmlType="submit" block size="large" loading={loading}>
-                Sign In
+                Вход
               </Button>
             </Form.Item>
           </Form>
@@ -159,7 +159,7 @@ function NewPasswordPage() {
     setLoading(true);
     try {
       await completeNewPassword(values.newPassword);
-      message.success('Password updated — welcome!');
+      message.success('Паролата е обновена — добре дошъл!');
     } catch (err: unknown) {
       message.error(err instanceof Error ? err.message : 'Failed to set new password');
     } finally {
@@ -180,37 +180,37 @@ function NewPasswordPage() {
           <div style={{ textAlign: 'center', marginBottom: 28 }}>
             <KeyOutlined style={{ fontSize: 48, color: GOLD_DARK, marginBottom: 12, display: 'block' }} />
             <Typography.Title level={3} style={{ margin: 0, color: BLUE, fontWeight: 700 }}>
-              Set a new password
+              Нова парола
             </Typography.Title>
             <Text style={{ color: BLUE_MUTED, marginTop: 6, display: 'block' }}>
-              Your temporary password has expired. Please choose a new one.
+              Временната ти парола е изтекла. Избери нова.
             </Text>
           </div>
           <Form form={form} layout="vertical" onFinish={handleSubmit}>
-            <Form.Item name="newPassword" label={<span style={{ color: BLUE }}>New password</span>}
-              rules={[{ required: true, min: 8, message: 'Min 8 characters' }]}>
-              <Input.Password prefix={<LockOutlined style={{ color: BLUE_MUTED }} />} size="large" placeholder="New password" />
+            <Form.Item name="newPassword" label={<span style={{ color: BLUE }}>Нова парола</span>}
+              rules={[{ required: true, min: 8, message: 'Минимум 8 символа' }]}>
+              <Input.Password prefix={<LockOutlined style={{ color: BLUE_MUTED }} />} size="large" placeholder="Нова парола" />
             </Form.Item>
-            <Form.Item name="confirm" label={<span style={{ color: BLUE }}>Confirm password</span>}
+            <Form.Item name="confirm" label={<span style={{ color: BLUE }}>Потвърди паролата</span>}
               dependencies={['newPassword']}
               rules={[
-                { required: true, message: 'Please confirm your password' },
+                { required: true, message: 'Потвърди паролата' },
                 ({ getFieldValue }) => ({
                   validator(_, value) {
                     if (!value || getFieldValue('newPassword') === value) return Promise.resolve();
-                    return Promise.reject(new Error('Passwords do not match'));
+                    return Promise.reject(new Error('Паролите не съвпадат'));
                   },
                 }),
               ]}>
-              <Input.Password prefix={<LockOutlined style={{ color: BLUE_MUTED }} />} size="large" placeholder="Confirm password" />
+              <Input.Password prefix={<LockOutlined style={{ color: BLUE_MUTED }} />} size="large" placeholder="Потвърди паролата" />
             </Form.Item>
             <Form.Item style={{ marginBottom: 8 }}>
               <Button type="primary" htmlType="submit" block size="large" loading={loading}>
-                Set password &amp; sign in
+                Запиши паролата и влез
               </Button>
             </Form.Item>
             <Button type="text" block onClick={signOut} style={{ color: BLUE_MUTED }}>
-              Back to sign in
+              Обратно към вход
             </Button>
           </Form>
         </Card>
@@ -243,7 +243,7 @@ export default function App() {
   if (!isAuthenticated) return <AuthPage />;
 
   const menuItems = isRootAdmin
-    ? [{ key: 'admin', icon: <TeamOutlined />, label: 'Tenants' }]
+    ? [{ key: 'admin', icon: <TeamOutlined />, label: 'Клиенти' }]
     : [
         { key: 'chat', icon: <MessageOutlined />, label: 'Чат' },
         ...(isTenantAdmin ? [
@@ -300,7 +300,7 @@ export default function App() {
               onClick={signOut}
               style={{ color: 'rgba(255,255,255,0.85)', fontWeight: 500 }}
             >
-              Sign Out
+              Изход
             </Button>
           </Space>
         </Header>

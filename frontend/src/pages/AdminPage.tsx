@@ -28,9 +28,23 @@ interface TableState {
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  CONFIRMED: 'green',
+  CONFIRMED:             'green',
   FORCE_CHANGE_PASSWORD: 'orange',
-  UNCONFIRMED: 'red',
+  UNCONFIRMED:           'red',
+  ARCHIVED:              'default',
+  COMPROMISED:           'volcano',
+  UNKNOWN:               'default',
+  RESET_REQUIRED:        'gold',
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  CONFIRMED:             'Активен',
+  FORCE_CHANGE_PASSWORD: 'Смяна на парола',
+  UNCONFIRMED:           'Непотвърден',
+  ARCHIVED:              'Архивиран',
+  COMPROMISED:           'Компрометиран',
+  UNKNOWN:               'Неизвестен',
+  RESET_REQUIRED:        'Нулиране на парола',
 };
 
 const DRAWER_HEADER = {
@@ -262,7 +276,7 @@ export default function AdminPage() {
       dataIndex: 'status',
       key: 'status',
       sorter: true,
-      render: (status: string) => <Tag color={STATUS_COLOR[status] ?? 'default'}>{status ?? '—'}</Tag>,
+      render: (status: string) => <Tag color={STATUS_COLOR[status] ?? 'default'}>{STATUS_LABEL[status] ?? status ?? '—'}</Tag>,
     },
     {
       title: 'Създаден',
