@@ -141,7 +141,7 @@ function ContractsTab() {
   const fetchContracts = useCallback(async (p = 0) => {
     setLoading(true);
     try {
-      const qs = new URLSearchParams({ page: String(p), pageSize: '20' });
+      const qs = new URLSearchParams({ page: String(p), pageSize: '20', excludeStatus: 'review_needed' });
       if (search) qs.set('search', search);
       const res = await fetch(`${base}/contracts?${qs}`, { headers: { Authorization: `Bearer ${idToken}` } });
       if (!res.ok) throw new Error(res.statusText);

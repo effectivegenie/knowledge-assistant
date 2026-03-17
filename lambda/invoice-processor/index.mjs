@@ -181,8 +181,8 @@ export const handler = async (event) => {
     const bucket = record.s3.bucket.name;
     const key    = decodeURIComponent(record.s3.object.key.replace(/\+/g, ' '));
 
-    if (key.endsWith('.metadata.json')) {
-      log.debug('Skipping metadata file', { key });
+    if (key.endsWith('.metadata.json') || key.endsWith('.kb.txt')) {
+      log.debug('Skipping sidecar file', { key });
       continue;
     }
 

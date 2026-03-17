@@ -289,14 +289,16 @@ export const handler = async (event) => {
   if (method === 'GET' && path.match(/\/contracts\/?$/)) {
     const page     = Math.max(0, parseInt(qs.page     || '0',  10));
     const pageSize = Math.min(100, Math.max(1, parseInt(qs.pageSize || '20', 10)));
-    const statusFilter       = qs.status       || null;
-    const contractTypeFilter = qs.contractType || null;
+    const statusFilter       = qs.status        || null;
+    const excludeStatus      = qs.excludeStatus || null;
+    const contractTypeFilter = qs.contractType  || null;
     const search             = (qs.search || '').toLowerCase().trim();
 
     try {
       let items = await queryAllContracts(tenantIdFromPath);
 
       if (statusFilter)       items = items.filter(c => c.status       === statusFilter);
+      if (excludeStatus)      items = items.filter(c => c.status       !== excludeStatus);
       if (contractTypeFilter) items = items.filter(c => c.contractType === contractTypeFilter);
       if (search) {
         items = items.filter(c =>

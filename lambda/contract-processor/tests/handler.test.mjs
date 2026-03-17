@@ -85,6 +85,15 @@ describe('contract-processor handler — skip metadata files', () => {
     expect(mockBedrockSend).not.toHaveBeenCalled();
     expect(mockDynamoSend).not.toHaveBeenCalled();
   });
+
+  it('skips .kb.txt sidecar files without calling Bedrock or DynamoDB', async () => {
+    const { handler } = await import('../index.mjs');
+    const event = makeEvent([makeS3Record('acme/contract.pdf.kb.txt')]);
+    const res = await handler(event);
+    expect(res.statusCode).toBe(200);
+    expect(mockBedrockSend).not.toHaveBeenCalled();
+    expect(mockDynamoSend).not.toHaveBeenCalled();
+  });
 });
 
 // ── Skip non-contract categories ─────────────────────────────────────────────

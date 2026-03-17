@@ -115,6 +115,17 @@ describe('contracts handler — GET /contracts', () => {
     expect(data.items[0].contractId).toBe('a');
   });
 
+  it('excludes contracts with status matching excludeStatus param', async () => {
+    const confirmed     = marshalContract({ tenantId: 'acme', contractId: 'a', status: 'confirmed',     contractType: 'services' });
+    const reviewNeeded  = marshalContract({ tenantId: 'acme', contractId: 'b', status: 'review_needed', contractType: 'nda' });
+    mockDynamoSend.mockResolvedValue({ Items: [confirmed, reviewNeeded] });
+    const { handler } = await import('../index.mjs');
+    const res = await handler(makeEvent({ qs: { excludeStatus: 'review_needed' } }));
+    const data = JSON.parse(res.body);
+    expect(data.items).toHaveLength(1);
+    expect(data.items[0].contractId).toBe('a');
+  });
+
   it('filters by search on clientName', async () => {
     const match   = marshalContract({ tenantId: 'acme', contractId: 'a', status: 'confirmed', contractType: 'services', clientName: 'Acme Client' });
     const noMatch = marshalContract({ tenantId: 'acme', contractId: 'b', status: 'confirmed', contractType: 'services', clientName: 'Other Corp' });
