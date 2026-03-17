@@ -35,6 +35,7 @@ graph LR
     SNS --> LDC[Lambda\ndoc-converter]
     SNS --> LDP[Lambda\ninvoice-processor]
     SNS --> LCP[Lambda\ncontract-processor]
+    SNS --> LCL[Lambda\ndoc-classifier]
     LS --> Bedrock
     LDC --> Claude
     LDC -->|.kb.txt| S3D
@@ -42,6 +43,9 @@ graph LR
     LDP --> DDB3
     LCP --> Claude
     LCP --> DDB4[(DynamoDB\nContractsTable)]
+    LCL --> Claude
+    LCL --> DDB3
+    LCL --> DDB4
     LContracts --> DDB4
     LContracts --> S3D
     LDocs --> S3D
@@ -130,17 +134,18 @@ sequenceDiagram
 | `chat` | WS `sendMessage` | RAG retrieval + LLM streaming |
 | `history` | WS `history` / `clear_history` | Load/soft-delete chat history |
 | `admin` | HTTP API | Tenant CRUD, full delete cleanup |
-| `tenant-admin` | HTTP API | User CRUD, presigned upload URLs (category: general\|invoice) |
+| `tenant-admin` | HTTP API | User CRUD, presigned upload URLs (category: general\|invoice\|contract) |
 | `invoices` | HTTP API | Invoice CRUD, stats, presigned view URL, tenant profile |
 | `doc-converter` | S3 `OBJECT_CREATED` | PDF/image → Claude Vision → `.kb.txt` sidecar for Bedrock ingestion |
 | `invoice-processor` | S3 `OBJECT_CREATED` | Claude Vision extraction → InvoicesTable (category=invoice only) |
 | `contract-processor` | S3 `OBJECT_CREATED` | Claude Vision extraction → ContractsTable (category=contract only) |
 | `contracts` | HTTP API | Contract CRUD, stats, presigned view URL |
 | `documents` | HTTP API | List/delete/view-url for category=general S3 documents |
+| `doc-classifier` | S3 `OBJECT_CREATED` | Auto-classifies category=general documents as invoice/contract via Claude Vision; saves `review_needed` record if detected |
 | `sync` | S3 `OBJECT_CREATED` | Start Bedrock ingestion job |
 | `pre-token-gen` | Cognito trigger | Inject `custom:tenantId` into ID token |
 
-`doc-converter`, `invoice-processor`, `contract-processor`, and `sync` all receive `OBJECT_CREATED` events via a shared **SNS topic** (S3 → SNS → Lambda subscriptions). This avoids the S3 constraint that prohibits two Lambda notifications for the same event type without non-overlapping prefix/suffix filters. `OBJECT_REMOVED` goes directly to `sync` only. Failures in one Lambda do not affect the others.
+`doc-converter`, `invoice-processor`, `contract-processor`, `doc-classifier`, and `sync` all receive `OBJECT_CREATED` events via a shared **SNS topic** (S3 → SNS → Lambda subscriptions). This avoids the S3 constraint that prohibits two Lambda notifications for the same event type without non-overlapping prefix/suffix filters. `OBJECT_REMOVED` goes directly to `sync` only. Failures in one Lambda do not affect the others.
 
 Bedrock KB (S3 Vectors backend) only supports plain-text files. `doc-converter` converts PDFs and images to `.kb.txt` sidecars via Claude Vision; the `.kb.txt` file triggers another S3 event → `sync` → Bedrock ingestion succeeds. Original files are kept in S3 for presigned-URL viewing. The `.metadata.json` is copied to `.kb.txt.metadata.json` so tenant isolation and group access control are preserved.
 
@@ -156,7 +161,7 @@ graph TD
     Stack --> Auth["AuthConstruct\n── Cognito User Pool\n── groups\n── pre-token-gen Lambda"]
     Stack --> KB["KnowledgeBaseConstruct\n── S3 Vectors index\n── Bedrock KB\n── default data source"]
     Stack --> DB["DatabaseConstruct\n── ConnectionsTable\n── ChatHistoryTable\n── TenantsTable\n── InvoicesTable"]
-    Stack --> Compute["ComputeConstruct\n── 13 Lambda functions\n── SNS fanout topic\n── IAM policies"]
+    Stack --> Compute["ComputeConstruct\n── 14 Lambda functions\n── SNS fanout topic\n── IAM policies"]
     Stack --> WS["WebSocketApiConstruct\n── API GW WebSocket\n── $connect / sendMessage / history / $disconnect routes"]
     Stack --> API["AdminApiConstruct\n── API GW HTTP\n── OpenAPI 3.0 spec\n── JWT authorizer"]
     Stack --> FE["FrontendConstruct\n── CloudFront distribution\n── OAC for S3"]

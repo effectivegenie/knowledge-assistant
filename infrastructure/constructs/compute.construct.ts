@@ -38,6 +38,7 @@ export class ComputeConstruct extends Construct {
   public readonly contractProcessorFn: lambda.Function;
   public readonly contractsFn: lambda.Function;
   public readonly documentsFn: lambda.Function;
+  public readonly docClassifierFn: lambda.Function;
 
   constructor(scope: Construct, id: string, props: ComputeProps) {
     super(scope, id);
@@ -315,5 +316,37 @@ export class ComputeConstruct extends Construct {
     });
     docsBucket.grantRead(this.documentsFn);
     docsBucket.grantDelete(this.documentsFn);
+
+    // ── Doc Classifier ───────────────────────────────────────────────────────
+    // Auto-classifies general documents as invoice or contract using Claude
+    // Vision. Only processes category=general uploads; already-categorised
+    // files are handled by the dedicated invoice/contract processors.
+    this.docClassifierFn = new lambda.Function(this, 'DocClassifierFunction', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: 'index.handler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../../lambda/doc-classifier')),
+      timeout: cdk.Duration.minutes(3),
+      memorySize: 512,
+      environment: {
+        INVOICES_TABLE:  invoicesTable.tableName,
+        CONTRACTS_TABLE: contractsTable.tableName,
+        TENANTS_TABLE:   tenantsTable.tableName,
+        MODEL_ID:        'eu.anthropic.claude-haiku-4-5-20251001-v1:0',
+      },
+    });
+    invoicesTable.grantReadWriteData(this.docClassifierFn);
+    contractsTable.grantReadWriteData(this.docClassifierFn);
+    tenantsTable.grantReadData(this.docClassifierFn);
+    docsBucket.grantRead(this.docClassifierFn);
+    docsBucket.grantPut(this.docClassifierFn);
+    this.docClassifierFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['bedrock:InvokeModel'],
+      resources: [
+        `arn:aws:bedrock:${stack.region}:${stack.account}:inference-profile/eu.anthropic.claude-haiku-4-5-20251001-v1:0`,
+        `arn:aws:bedrock:${stack.region}::foundation-model/*`,
+        'arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0',
+      ],
+    }));
+    objectCreatedTopicRef.addSubscription(new subs.LambdaSubscription(this.docClassifierFn));
   }
 }

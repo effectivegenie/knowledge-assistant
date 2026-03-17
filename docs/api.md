@@ -205,6 +205,8 @@ Generate presigned S3 PUT URLs for direct browser-to-S3 upload (document + metad
 
 `category` is optional. Valid values: `general` (default), `invoice`, or `contract`. When set to `invoice`, the invoice-processor Lambda runs and saves an InvoicesTable record. When set to `contract`, the contract-processor Lambda runs and saves a ContractsTable record. Any unknown value falls back to `general`.
 
+When `category` is `general` (or omitted), the **doc-classifier** Lambda automatically analyses the document with Claude Vision. If it recognises the document as an invoice or contract, it saves a `review_needed` record in the appropriate table and tags it `autoDetected: true` so users can review it in the Pending Review tab. Documents that cannot be classified remain as general documents only.
+
 Filenames are sanitised server-side: characters outside `[a-zA-Z0-9._\-\s]` are replaced with `_`. The frontend additionally transliterates Cyrillic characters to Latin before sending the filename.
 
 **Response 200**
